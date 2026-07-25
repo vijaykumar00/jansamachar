@@ -1,389 +1,252 @@
-import React, { useState, useCallback } from 'react';
+// JanSamachar — Personalized News Feed (v2)
+// Sections: Breaking → District → State → National → Profession → Interest
+
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity,
-  useColorScheme, RefreshControl, ScrollView, Pressable,
-  StatusBar, Image, Linking, Modal, ActivityIndicator, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  RefreshControl, StatusBar, ActivityIndicator,
+  Animated, Dimensions, useColorScheme, Linking,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useFocusEffect } from 'expo-router';
 import { Colors } from '@/constants/colors';
-import { fetchAllNews, fetchBreakingNews, NewsItem } from '@/services/newsService';
-import { NEWS_CATEGORIES } from '@/constants/sources';
-import { summarizeNews } from '@/services/geminiService';
-import * as Sharing from 'expo-sharing';
+import { useProfileStore } from '@/store/userProfileStore';
+import { buildPersonalizedFeed, getGreeting, type FeedSection } from '@/services/personalizationService';
+import { PROFESSIONS } from '@/constants/professions';
+import AnimatedNewsCard from '@/components/AnimatedNewsCard';
+import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
 
-// ── Trust Badge ────────────────────────────────────────────────────────────
-function TrustBadge({ level, hasDoc }: { level: string; hasDoc?: boolean }) {
-  const colorScheme = useColorScheme();
-  const C = colorScheme === 'dark' ? Colors.dark : Colors.light;
+const { width } = Dimensions.get('window');
 
-  const badges: Record<string, { emoji: string; label: string; color: string }> = {
-    verified: { emoji: '🟢', label: 'Verified', color: C.trustVerified },
-    youtube: { emoji: '▶️', label: 'YouTube', color: C.trustYoutube },
-    citizen: { emoji: '🟡', label: 'Citizen', color: C.trustCitizen },
-    breaking: { emoji: '🔴', label: 'Breaking', color: C.trustBreaking },
-    official: { emoji: '🏛️', label: 'Official', color: C.trustDoc },
-  };
-  const badge = badges[level] || badges.citizen;
+// ─── Breaking News Ticker ────────────────────────────────────────────────────
+function BreakingTicker({ items }: { items: string[] }) {
+  const translateX = useRef(new Animated.Value(width)).current;
+  const [idx, setIdx] = useState(0);
 
+  useEffect(() => {
+    if (items.length === 0) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(translateX, { toValue: -width * 1.5, duration: 8000, useNativeDriver: true }),
+        Animated.timing(translateX, { toValue: width, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    const interval = setInterval(() => setIdx(i => (i + 1) % items.length), 8500);
+    return () => { anim.stop(); clearInterval(interval); };
+  }, [items.length]);
+
+  if (!items.length) return null;
   return (
-    <View style={styles.badgeRow}>
-      <View style={[styles.badge, { backgroundColor: badge.color + '22', borderColor: badge.color + '55' }]}>
-        <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
-        <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
+    <View style={styles.ticker}>
+      <View style={styles.tickerBadge}><Text style={styles.tickerBadgeText}>🔴 LIVE</Text></View>
+      <View style={styles.tickerContent}>
+        <Animated.Text style={[styles.tickerText, { transform: [{ translateX }] }]} numberOfLines={1}>
+          {items[idx]}
+        </Animated.Text>
       </View>
-      {hasDoc && (
-        <View style={[styles.badge, { backgroundColor: C.trustDoc + '22', borderColor: C.trustDoc + '55', marginLeft: 4 }]}>
-          <Text style={styles.badgeEmoji}>📄</Text>
-          <Text style={[styles.badgeText, { color: C.trustDoc }]}>Doc</Text>
+    </View>
+  );
+}
+
+// ─── Section Header ──────────────────────────────────────────────────────────
+function SectionHeader({ emoji, title, titleHi, onSeeAll }: {
+  emoji: string; title: string; titleHi: string; onSeeAll?: () => void;
+}) {
+  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionTitleRow}>
+        <Text style={styles.sectionEmoji}>{emoji}</Text>
+        <View>
+          <Text style={[styles.sectionTitleHi, { color: C.text }]}>{titleHi}</Text>
+          <Text style={[styles.sectionTitleEn, { color: C.textMuted }]}>{title}</Text>
         </View>
+      </View>
+      {onSeeAll && (
+        <TouchableOpacity onPress={onSeeAll}>
+          <Text style={{ color: C.primary, fontSize: 13, fontWeight: '700' }}>See all →</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
 }
 
-// ── Time Ago ───────────────────────────────────────────────────────────────
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+// ─── Geo Level Pills ─────────────────────────────────────────────────────────
+const GEO_LEVELS = [
+  { id: 'all', label: 'सब', labelEn: 'All', emoji: '⭐' },
+  { id: 'district', label: 'जिला', labelEn: 'District', emoji: '📍' },
+  { id: 'state', label: 'राज्य', labelEn: 'State', emoji: '🗺️' },
+  { id: 'national', label: 'राष्ट्रीय', labelEn: 'National', emoji: '🇮🇳' },
+  { id: 'international', label: 'विश्व', labelEn: 'World', emoji: '🌍' },
+];
 
-// ── Breaking News Ticker ───────────────────────────────────────────────────
-function BreakingTicker({ items }: { items: NewsItem[] }) {
-  const colorScheme = useColorScheme();
-  const C = colorScheme === 'dark' ? Colors.dark : Colors.light;
-
-  if (!items.length) return null;
-
-  return (
-    <View style={[styles.tickerContainer, { backgroundColor: C.live }]}>
-      <View style={styles.tickerBadge}>
-        <Text style={styles.tickerBadgeText}>🔴 BREAKING</Text>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tickerScroll}>
-        {items.map((item, i) => (
-          <Text key={item.id} style={styles.tickerText}>
-            {item.title}
-            {i < items.length - 1 ? '  •  ' : ''}
-          </Text>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-// ── Category Chips ─────────────────────────────────────────────────────────
-function CategoryChips({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) {
-  const colorScheme = useColorScheme();
-  const C = colorScheme === 'dark' ? Colors.dark : Colors.light;
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.chipsContainer}
-    >
-      {NEWS_CATEGORIES.map((cat) => {
-        const isSelected = selected === cat.id;
-        return (
-          <Pressable
-            key={cat.id}
-            onPress={() => onSelect(cat.id)}
-            style={[
-              styles.chip,
-              {
-                backgroundColor: isSelected ? C.primary : C.surface,
-                borderColor: isSelected ? C.primary : C.border,
-              },
-            ]}
-          >
-            <Text style={[styles.chipText, { color: isSelected ? '#fff' : C.textSecondary }]}>
-              {cat.labelEn}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-// ── News Card ──────────────────────────────────────────────────────────────
-function NewsCard({ item }: { item: NewsItem }) {
+// ─── Main Screen ─────────────────────────────────────────────────────────────
+export default function PersonalizedFeed() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
 
-  const [aiSummary, setAiSummary] = useState(item.aiSummary || '');
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-
-  const handlePress = () => {
-    if (item.source === 'youtube' && item.videoId) {
-      Linking.openURL(`https://www.youtube.com/watch?v=${item.videoId}`);
-    } else if (item.url) {
-      Linking.openURL(item.url);
-    }
-  };
-
-  const handleAISummary = async () => {
-    setShowModal(true);
-    if (aiSummary) return; // already have summary
-    setLoadingAI(true);
-    try {
-      const summary = await summarizeNews(item.title, item.description || '', 'both');
-      setAiSummary(summary);
-    } catch (err: any) {
-      setAiSummary(`AI Error: ${err.message}\n\nGet a valid key at aistudio.google.com`);
-    } finally {
-      setLoadingAI(false);
-    }
-  };
-
-  const handleShare = async () => {
-    try {
-      const shareText = `📰 ${item.title}\n\n🔗 ${item.url || 'JanSamachar'}\n\nShare via JanSamachar — असली खबर`;
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        // Native share (works for text content)
-        Alert.alert('Share', shareText, [
-          { text: 'WhatsApp', onPress: () => Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareText)}`) },
-          { text: 'Copy Link', onPress: () => Linking.openURL(item.url || '') },
-          { text: 'Cancel', style: 'cancel' },
-        ]);
-      }
-    } catch (e) {
-      console.warn('Share failed:', e);
-    }
-  };
-
-  return (
-    <>
-      {/* AI Summary Modal */}
-      <Modal
-        visible={showModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: C.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: C.text }]}>🤖 AI सारांश</Text>
-              <TouchableOpacity onPress={() => setShowModal(false)}>
-                <Text style={[styles.modalClose, { color: C.textMuted }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.modalNewsTitle, { color: C.textSecondary }]} numberOfLines={2}>
-              {item.title}
-            </Text>
-            <View style={[styles.modalDivider, { backgroundColor: C.border }]} />
-            {loadingAI ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator color={C.primary} size="large" />
-                <Text style={[{ color: C.textSecondary, marginTop: 12 }]}>Gemini AI सोच रहा है...</Text>
-              </View>
-            ) : (
-              <Text style={[styles.modalSummary, { color: C.text }]}>{aiSummary}</Text>
-            )}
-            <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: C.primary }]}
-              onPress={() => { setShowModal(false); handlePress(); }}
-            >
-              <Text style={styles.modalBtnText}>पूरी खबर पढ़ें →</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <Pressable
-        onPress={handlePress}
-        style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: C.card,
-            borderColor: C.border,
-            opacity: pressed ? 0.92 : 1,
-            transform: [{ scale: pressed ? 0.99 : 1 }],
-          },
-        ]}
-      >
-        {/* Thumbnail */}
-        {item.thumbnailUrl ? (
-          <Image
-            source={{ uri: item.thumbnailUrl }}
-            style={styles.cardImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.cardImagePlaceholder, { backgroundColor: C.border }]}>
-            <Text style={{ fontSize: 32 }}>📰</Text>
-          </View>
-        )}
-
-        {/* YouTube badge overlay */}
-        {item.source === 'youtube' && (
-          <View style={styles.ytOverlay}>
-            <Text style={styles.ytPlay}>▶</Text>
-          </View>
-        )}
-
-        <View style={styles.cardBody}>
-          {/* Source + Time */}
-          <View style={styles.cardMeta}>
-            <Text style={[styles.cardSource, { color: C.primary }]} numberOfLines={1}>
-              {item.channelName}
-            </Text>
-            <Text style={[styles.cardTime, { color: C.textMuted }]}>
-              {timeAgo(item.publishedAt)}
-            </Text>
-          </View>
-
-          {/* Title */}
-          <Text style={[styles.cardTitle, { color: C.text }]} numberOfLines={3}>
-            {item.title}
-          </Text>
-
-          {/* Description */}
-          {item.description ? (
-            <Text style={[styles.cardDesc, { color: C.textSecondary }]} numberOfLines={2}>
-              {item.description}
-            </Text>
-          ) : null}
-
-          {/* Trust + Actions */}
-          <View style={styles.cardFooter}>
-            <TrustBadge level={item.trustLevel} hasDoc={item.hasDoc} />
-            <View style={styles.cardActions}>
-              {/* 🤖 AI Summary Button — calls real Gemini API */}
-              <TouchableOpacity
-                style={[styles.aiBtn, { backgroundColor: C.primary + '20', borderColor: C.primary + '50' }]}
-                onPress={handleAISummary}
-              >
-                {loadingAI
-                  ? <ActivityIndicator size="small" color={C.primary} />
-                  : <Text style={[styles.aiBtnText, { color: C.primary }]}>🤖 AI</Text>
-                }
-              </TouchableOpacity>
-              {/* Share Button */}
-              <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
-                <Text style={[styles.actionBtnText, { color: C.textMuted }]}>↗</Text>
-              </TouchableOpacity>
-              {/* Read More */}
-              <TouchableOpacity style={styles.actionBtn} onPress={handlePress}>
-                <Text style={[styles.actionBtnText, { color: C.accent }]}>पढ़ें →</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Pressable>
-    </>
-  );
-}
-
-// ── Header ─────────────────────────────────────────────────────────────────
-function AppHeader() {
-  const colorScheme = useColorScheme();
-  const C = colorScheme === 'dark' ? Colors.dark : Colors.light;
-
-  return (
-    <View style={[styles.header, { backgroundColor: C.secondary, borderBottomColor: C.primary }]}>
-      <View style={styles.headerLeft}>
-        <View style={styles.logoContainer}>
-          <Text style={styles.logoFlag}>🇮🇳</Text>
-        </View>
-        <View>
-          <Text style={styles.headerTitle}>जन समाचार</Text>
-          <Text style={styles.headerSubtitle}>JanSamachar • असली खबर</Text>
-        </View>
-      </View>
-      <View style={styles.headerRight}>
-        <View style={styles.liveIndicator}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>LIVE</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ── Main Screen ────────────────────────────────────────────────────────────
-export default function NewsScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
-
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const { profile, isLoaded } = useProfileStore();
+  const [sections, setSections] = useState<FeedSection[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [geoFilter, setGeoFilter] = useState('all');
+  const [breakingNews, setBreakingNews] = useState<string[]>([]);
 
-  const { data: news = [], isLoading, refetch } = useQuery({
-    queryKey: ['news'],
-    queryFn: fetchAllNews,
-    staleTime: 1000 * 60 * 5,
-  });
+  const headerAnim = useRef(new Animated.Value(0)).current;
 
-  const { data: breaking = [] } = useQuery({
-    queryKey: ['breaking'],
-    queryFn: fetchBreakingNews,
-    staleTime: 1000 * 60 * 2,
-  });
+  const profession = PROFESSIONS.find(p => p.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
 
-  const filteredNews =
-    selectedCategory === 'all'
-      ? news
-      : news.filter((n) => n.category === selectedCategory || n.trustLevel === selectedCategory);
+  const loadFeed = useCallback(async (isRefresh = false) => {
+    if (!isLoaded) return;
+    if (!isRefresh) setLoading(true);
+    try {
+      const [feedSections, breaking] = await Promise.all([
+        buildPersonalizedFeed(profile),
+        searchYouTubeNews('India breaking news today', 5),
+      ]);
+      setSections(feedSections);
+      setBreakingNews(breaking.map(v => v.title));
+    } catch (e) {
+      console.warn('Feed load error:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [profile, isLoaded]);
 
-  const onRefresh = useCallback(async () => {
+  useEffect(() => { loadFeed(); }, [loadFeed]);
+
+  useFocusEffect(useCallback(() => {
+    Animated.spring(headerAnim, { toValue: 1, speed: 12, bounciness: 6, useNativeDriver: true }).start();
+  }, []));
+
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-  }, [refetch]);
+    loadFeed(true);
+  }, [loadFeed]);
+
+  const filteredSections = geoFilter === 'all'
+    ? sections
+    : sections.filter(s => s.geoLevel === geoFilter || s.geoLevel === 'profession' || s.geoLevel === 'interest');
+
+  const allItems = filteredSections.flatMap(s => s.items);
+
+  const greeting = getGreeting();
 
   return (
-    <View style={[styles.container, { backgroundColor: C.background }]}>
-      <StatusBar
-        barStyle={isDark ? 'light-content' : 'light-content'}
-        backgroundColor={Colors.light.secondary}
-      />
-      <AppHeader />
-      <BreakingTicker items={breaking} />
+    <View style={[styles.container, { backgroundColor: isDark ? '#060B18' : '#F0F2F8' }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#040912" />
 
-      {isLoading ? (
+      {/* Animated Header */}
+      <Animated.View style={[
+        styles.header,
+        {
+          opacity: headerAnim,
+          transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+        },
+      ]}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.greeting}>{greeting}</Text>
+            <Text style={styles.locationLine}>
+              📍 {profile.districtName} • {profile.stateName}
+            </Text>
+          </View>
+          <View style={styles.profBadge}>
+            <Text style={{ fontSize: 22 }}>{profession.emoji}</Text>
+          </View>
+        </View>
+        <Text style={styles.headerTitle}>जन समाचार</Text>
+        <Text style={styles.headerSub}>असली खबर • Real News</Text>
+      </Animated.View>
+
+      {/* Breaking News Ticker */}
+      <BreakingTicker items={breakingNews} />
+
+      {/* Geo Filter Pills */}
+      <View style={styles.geoFilterRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.geoScroll}>
+          {GEO_LEVELS.map(g => (
+            <TouchableOpacity
+              key={g.id}
+              style={[
+                styles.geoPill,
+                geoFilter === g.id && styles.geoPillActive,
+                { borderColor: geoFilter === g.id ? '#FF9933' : 'rgba(255,255,255,0.15)' },
+              ]}
+              onPress={() => setGeoFilter(g.id)}
+            >
+              <Text style={styles.geoPillEmoji}>{g.emoji}</Text>
+              <Text style={[styles.geoPillText, geoFilter === g.id && { color: '#FF9933' }]}>
+                {g.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Feed Content */}
+      {loading ? (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingEmoji}>🗞️</Text>
-          <Text style={[styles.loadingText, { color: C.textSecondary }]}>खबरें लोड हो रही हैं...</Text>
-          <Text style={[styles.loadingSubText, { color: C.textMuted }]}>Loading real news from trusted sources</Text>
+          <ActivityIndicator color="#FF9933" size="large" />
+          <Text style={[styles.loadingText, { color: C.textSecondary }]}>
+            {profile.districtName} की खबरें लोड हो रही हैं...
+          </Text>
+          <Text style={[styles.loadingSubText, { color: C.textMuted }]}>
+            Fetching from YouTube • NewsData.io
+          </Text>
         </View>
       ) : (
-        <FlatList
-          data={filteredNews}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <NewsCard item={item} />}
-          ListHeaderComponent={
-            <CategoryChips selected={selectedCategory} onSelect={setSelectedCategory} />
-          }
+        <ScrollView
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={C.primary}
-              colors={[C.primary]}
+              colors={['#FF9933']}
+              tintColor="#FF9933"
             />
           }
-          contentContainerStyle={styles.list}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyEmoji}>📭</Text>
-              <Text style={[styles.emptyText, { color: C.textSecondary }]}>
-                कोई खबर नहीं मिली। ऊपर खींचकर रिफ्रेश करें।
+          contentContainerStyle={{ paddingTop: 10, paddingBottom: 100 }}
+        >
+          {geoFilter === 'all' ? (
+            // Show sections with headers
+            sections.map(section => (
+              <View key={section.id}>
+                <SectionHeader
+                  emoji={section.emoji}
+                  title={section.title}
+                  titleHi={section.titleHi}
+                />
+                {section.items.map((item, i) => (
+                  <AnimatedNewsCard key={item.id} item={item} index={i} />
+                ))}
+              </View>
+            ))
+          ) : (
+            // Show flat filtered list
+            allItems.map((item, i) => (
+              <AnimatedNewsCard key={item.id + i} item={item} index={i} />
+            ))
+          )}
+
+          {sections.length === 0 && !loading && (
+            <View style={styles.emptyState}>
+              <Text style={{ fontSize: 48 }}>📡</Text>
+              <Text style={[styles.emptyTitle, { color: C.text }]}>No news found</Text>
+              <Text style={[styles.emptyDesc, { color: C.textMuted }]}>
+                Pull down to refresh or check your internet connection
               </Text>
+              <TouchableOpacity
+                style={[styles.retryBtn, { backgroundColor: '#FF9933' }]}
+                onPress={() => loadFeed()}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>🔄 Retry</Text>
+              </TouchableOpacity>
             </View>
-          }
-        />
+          )}
+        </ScrollView>
       )}
     </View>
   );
@@ -394,133 +257,60 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 52, paddingBottom: 14,
-    borderBottomWidth: 3,
+    paddingTop: 52, paddingHorizontal: 20, paddingBottom: 16,
+    backgroundColor: '#040912',
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logoContainer: {
-    width: 38, height: 38, borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  greeting: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
+  locationLine: { color: '#FF9933', fontSize: 12, fontWeight: '700', marginTop: 2 },
+  profBadge: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: 'rgba(255,153,51,0.15)', borderWidth: 1.5, borderColor: '#FF993350',
     alignItems: 'center', justifyContent: 'center',
   },
-  logoFlag: { fontSize: 22 },
-  headerTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '800', letterSpacing: 0.3 },
-  headerSubtitle: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  liveIndicator: {
+  headerTitle: { color: '#fff', fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
+  headerSub: { color: 'rgba(255,255,255,0.45)', fontSize: 12, marginTop: 2 },
+
+  // Ticker
+  ticker: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D0D0D',
+    paddingVertical: 8, paddingHorizontal: 12, overflow: 'hidden',
+  },
+  tickerBadge: { backgroundColor: '#cc0000', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 10 },
+  tickerBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  tickerContent: { flex: 1, overflow: 'hidden', height: 20 },
+  tickerText: { color: '#fff', fontSize: 13, fontWeight: '600', position: 'absolute' },
+
+  // Geo filter
+  geoFilterRow: { paddingVertical: 10, borderBottomWidth: 0 },
+  geoScroll: { paddingHorizontal: 16, gap: 8 },
+  geoPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: Colors.light.live,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
-  liveText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  geoPillActive: { backgroundColor: 'rgba(255,153,51,0.15)' },
+  geoPillEmoji: { fontSize: 13 },
+  geoPillText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600' },
 
-  // Breaking Ticker
-  tickerContainer: {
-    flexDirection: 'row', alignItems: 'center', height: 38, overflow: 'hidden',
+  // Section header
+  sectionHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginHorizontal: 16, marginTop: 24, marginBottom: 12,
   },
-  tickerBadge: {
-    paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  tickerBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  tickerScroll: { flex: 1 },
-  tickerText: { color: '#fff', fontSize: 12, fontWeight: '500', paddingHorizontal: 8, lineHeight: 38 },
-
-  // Category Chips
-  chipsContainer: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  chip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    borderWidth: 1, flexDirection: 'row', alignItems: 'center',
-  },
-  chipText: { fontSize: 12.5, fontWeight: '600' },
-
-  // List
-  list: { paddingHorizontal: 16, paddingBottom: 100 },
-
-  // Card
-  card: {
-    borderRadius: 16, borderWidth: 1, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
-  },
-  cardImage: { width: '100%', height: 190 },
-  cardImagePlaceholder: {
-    width: '100%', height: 120, alignItems: 'center', justifyContent: 'center',
-  },
-  ytOverlay: {
-    position: 'absolute', top: 80, left: '50%', transform: [{ translateX: -20 }],
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center',
-  },
-  ytPlay: { color: '#fff', fontSize: 18, marginLeft: 3 },
-  cardBody: { padding: 14 },
-  cardMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardSource: { fontSize: 12, fontWeight: '700', flex: 1 },
-  cardTime: { fontSize: 11, marginLeft: 8 },
-  cardTitle: { fontSize: 16, fontWeight: '700', lineHeight: 22, marginBottom: 6 },
-  cardDesc: { fontSize: 13, lineHeight: 19, marginBottom: 8 },
-
-  // AI Summary
-  aiSummaryBox: { borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 10 },
-  aiLabel: { fontSize: 11, fontWeight: '800', marginBottom: 4 },
-  aiText: { fontSize: 12, lineHeight: 18 },
-
-  // Card Footer
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badgeRow: { flexDirection: 'row', alignItems: 'center' },
-  badge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1,
-  },
-  badgeEmoji: { fontSize: 10 },
-  badgeText: { fontSize: 10, fontWeight: '700' },
-  cardActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  actionBtn: { paddingVertical: 4, paddingHorizontal: 4 },
-  actionBtnText: { fontSize: 13, fontWeight: '700' },
-
-  // AI Button (inline on card)
-  aiBtn: {
-    borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5,
-    alignItems: 'center', justifyContent: 'center', minWidth: 44,
-  },
-  aiBtnText: { fontSize: 12, fontWeight: '800' },
-
-  // AI Summary Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.2, shadowRadius: 20, elevation: 20,
-    maxHeight: '85%',
-  },
-  modalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 12,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '800' },
-  modalClose: { fontSize: 22, fontWeight: '400', paddingHorizontal: 4 },
-  modalNewsTitle: { fontSize: 13, lineHeight: 19, marginBottom: 16 },
-  modalDivider: { height: 1, marginBottom: 16 },
-  modalLoading: { alignItems: 'center', paddingVertical: 30 },
-  modalSummary: { fontSize: 15, lineHeight: 24, marginBottom: 24 },
-  modalBtn: {
-    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-  },
-  modalBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionEmoji: { fontSize: 22 },
+  sectionTitleHi: { fontSize: 17, fontWeight: '800' },
+  sectionTitleEn: { fontSize: 11, marginTop: 1 },
 
   // Loading
-  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingTop: 80 },
-  loadingEmoji: { fontSize: 48 },
-  loadingText: { fontSize: 18, fontWeight: '600' },
-  loadingSubText: { fontSize: 13 },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  loadingSubText: { fontSize: 12, textAlign: 'center' },
 
   // Empty
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 12 },
-  emptyEmoji: { fontSize: 48 },
-  emptyText: { fontSize: 15, textAlign: 'center', lineHeight: 22 },
+  emptyState: { alignItems: 'center', paddingTop: 60, gap: 12, paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 20, fontWeight: '700' },
+  emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
+  retryBtn: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 },
 });
