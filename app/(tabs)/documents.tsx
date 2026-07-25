@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FlatList, Linking, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
-import { spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
 import { getIndiaGeoData, type GeoDistrict, type GeoState } from '@/services/geoService';
 import { fetchDistrictNews, fetchStateNews, toNewsItem } from '@/services/newsDataService';
 import { MOCK_DOCUMENTS, MOCK_NEWS_ITEMS } from '@/services/mockData';
@@ -33,6 +33,10 @@ const CATEGORIES = [
   { id: 'agriculture', label: 'Agriculture' },
 ];
 
+function hasLocation(profile: ReturnType<typeof useProfileStore.getState>['profile']) {
+  return Boolean(profile.stateId && profile.stateName && profile.districtId && profile.districtName);
+}
+
 async function loadLocalStories(profile: ReturnType<typeof useProfileStore.getState>['profile']) {
   const lang = profile.language === 'both' ? 'hi,en' : profile.language;
   const [district, state, citizen] = await Promise.allSettled([
@@ -41,17 +45,34 @@ async function loadLocalStories(profile: ReturnType<typeof useProfileStore.getSt
     getCitizenNewsItems(8, 'local'),
   ]);
 
-  const localItems = [
+  const publisherItems = [
     ...(district.status === 'fulfilled' ? district.value.map(toNewsItem) : []),
     ...(state.status === 'fulfilled' ? state.value.map(toNewsItem) : []),
-    ...(citizen.status === 'fulfilled' ? citizen.value : []),
-  ].map((item) => ({ ...item, category: item.category || 'state' }));
+  ].map((item) => ({
+    ...item,
+    category: item.category || 'state',
+    sourceType: 'verified_publisher' as const,
+  }));
+
+  const citizenItems = (citizen.status === 'fulfilled' ? citizen.value : []).map((item) => ({
+    ...item,
+    category: item.category || 'state',
+    sourceType: 'citizen_report' as const,
+  }));
 
   const fallback = MOCK_NEWS_ITEMS
     .filter((item) => ['state', 'accountability', 'fact_check'].includes(item.category || ''))
-    .map((item) => ({ ...item, category: item.category || 'state' }));
+    .map((item, index) => ({
+      ...item,
+      category: item.category || 'state',
+      sourceType: index % 4 === 0 ? 'citizen_report' as const : 'verified_publisher' as const,
+    }));
 
-  return localItems.length > 0 ? localItems.slice(0, 12) : fallback.slice(0, 6);
+  const combined = [...publisherItems, ...citizenItems];
+  return {
+    items: combined.length > 0 ? combined.slice(0, 14) : fallback.slice(0, 8),
+    fallbackLabel: combined.length === 0 ? `Showing saved stories from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
+  };
 }
 
 function DocumentCard({ doc }: { doc: Document }) {
@@ -67,18 +88,11 @@ function DocumentCard({ doc }: { doc: Document }) {
     >
       <View style={styles.cardTop}>
         <Badge label={doc.type} tone={doc.type === 'Act' ? 'fact' : 'verified'} />
-        <Badge label={doc.language === 'both' ? 'HI + EN' : doc.language.toUpperCase()} tone="muted" />
+        <Badge label={doc.language === 'both' ? 'HI + EN' : doc.language.toUpperCase()} tone="topic" />
       </View>
       <AppText variant="cardTitle">{doc.title}</AppText>
       <AppText variant="caption" tone="muted">{doc.ministry} - {doc.date}</AppText>
-      <View style={[styles.summaryBox, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
-        <Badge label="AI-ready summary" tone="ai" />
-        <AppText variant="body" tone="secondary">{doc.summary}</AppText>
-      </View>
-      <View style={styles.actionRow}>
-        <AppButton label="Open document" onPress={() => Linking.openURL(doc.url)} style={{ flex: 1 }} />
-        <AppButton label="Explain" variant="secondary" style={{ flex: 1 }} />
-      </View>
+      <AppText variant="body" tone="secondary" numberOfLines={2}>{doc.summary}</AppText>
     </Pressable>
   );
 }
@@ -87,6 +101,7 @@ export default function LocalScreen() {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { profile, setProfile } = useProfileStore();
+  const locationReady = hasLocation(profile);
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
   const [locationSheetOpen, setLocationSheetOpen] = useState(false);
@@ -95,6 +110,7 @@ export default function LocalScreen() {
   const localQuery = useQuery({
     queryKey: ['local-tab', profile.districtName, profile.stateName, profile.language],
     queryFn: () => loadLocalStories(profile),
+    enabled: locationReady,
     staleTime: 1000 * 60 * 6,
   });
 
@@ -113,17 +129,19 @@ export default function LocalScreen() {
   }, [category, search]);
 
   const rows = useMemo<LocalRow[]>(() => {
-    const storyRows = (localQuery.data || []).slice(0, 5).map((item, index) => ({
+    if (!locationReady) return [];
+    const storyRows = (localQuery.data?.items || []).map((item, index) => ({
       type: 'story' as const,
       id: `local_${item.id}_${index}`,
       item,
     }));
-    const docRows = documents.map((doc) => ({ type: 'doc' as const, id: doc.id, doc }));
+    const docRows = documents.slice(0, 3).map((doc) => ({ type: 'doc' as const, id: doc.id, doc }));
     return [...storyRows, ...docRows];
-  }, [documents, localQuery.data]);
+  }, [documents, localQuery.data?.items, locationReady]);
 
   const states = geoQuery.data || [];
-  const districtChoices = selectedState?.districts || states.find((state) => state.name === profile.stateName)?.districts || [];
+  const activeState = selectedState || states.find((state) => state.id === profile.stateId || state.name === profile.stateName) || null;
+  const districtChoices = activeState?.districts || [];
 
   const applyDistrict = (state: GeoState, district: GeoDistrict) => {
     setProfile({
@@ -146,26 +164,46 @@ export default function LocalScreen() {
           <RefreshControl
             refreshing={localQuery.isRefetching}
             onRefresh={localQuery.refetch}
-            colors={[C.primary]}
-            tintColor={C.primary}
+            colors={[C.coral]}
+            tintColor={C.coral}
           />
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <View style={[styles.localHero, { backgroundColor: C.secondary }]}>
-              <AppText variant="caption" tone="inverse">Current district</AppText>
-              <AppText variant="display" tone="inverse">{profile.districtName}</AppText>
-              <AppText variant="body" tone="inverse" style={{ opacity: 0.76 }}>
-                Local stories, citizen posts, civic documents, alerts, and government updates for {profile.stateName}.
-              </AppText>
-              <View style={styles.actionRow}>
-                <AppButton label="Change location" variant="secondary" onPress={() => setLocationSheetOpen(true)} style={{ flex: 1 }} />
-                <AppButton label="Use saved area" style={{ flex: 1 }} onPress={() => localQuery.refetch()} />
+            {!locationReady ? (
+              <View style={[styles.emptyLocation, { backgroundColor: C.card, borderColor: C.border }]}>
+                <AppText variant="screenTitle">Set your local area</AppText>
+                <AppText variant="body" tone="secondary">
+                  Choose a district to unlock verified local updates and citizen reports.
+                </AppText>
+                <AppButton label="Set location" onPress={() => setLocationSheetOpen(true)} style={{ alignSelf: 'flex-start' }} />
               </View>
-            </View>
-
-            <SectionHeader title="Nearby and state updates" eyebrow={localQuery.isFetching ? 'Refreshing' : 'NewsData + Supabase'} />
-            {localQuery.isLoading ? <LoadingState label="Loading local updates..." /> : null}
+            ) : (
+              <>
+                <View style={[styles.localHero, { backgroundColor: C.secondary }]}>
+                  <AppText variant="caption" tone="inverse">Pin: district-level locality</AppText>
+                  <AppText variant="display" tone="inverse">{profile.districtName}</AppText>
+                  <AppText variant="body" tone="inverse" style={{ opacity: 0.76 }}>
+                    Verified publisher updates and citizen reports for {profile.stateName}.
+                  </AppText>
+                  <View style={styles.actionRow}>
+                    <AppButton label="Change location" variant="secondary" onPress={() => setLocationSheetOpen(true)} style={{ flex: 1 }} />
+                    <AppButton label="Refresh local" style={{ flex: 1 }} onPress={() => localQuery.refetch()} />
+                  </View>
+                </View>
+                <View style={styles.sourceLegend}>
+                  <Badge label="verified_publisher" tone="verified" />
+                  <Badge label="citizen_report" tone="topic" />
+                </View>
+                <SectionHeader title="Nearby updates" eyebrow={localQuery.isFetching ? 'Refreshing' : 'NewsData + geo + Supabase'} />
+                {localQuery.data?.fallbackLabel ? (
+                  <View style={[styles.savedNotice, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
+                    <AppText variant="caption" tone="secondary">{localQuery.data.fallbackLabel}</AppText>
+                  </View>
+                ) : null}
+                {localQuery.isLoading ? <LoadingState label="Loading local updates..." /> : null}
+              </>
+            )}
 
             <SectionHeader title="Civic documents" eyebrow="RTI, law, schemes" />
             <SearchField
@@ -185,12 +223,6 @@ export default function LocalScreen() {
                 />
               ))}
             </View>
-            <AppButton
-              label="File RTI request"
-              icon="RTI"
-              onPress={() => Linking.openURL('https://rtionline.gov.in')}
-              style={{ marginTop: spacing.lg }}
-            />
           </View>
         }
         renderItem={({ item, index }) => {
@@ -199,23 +231,25 @@ export default function LocalScreen() {
           }
           return <DocumentCard doc={item.doc} />;
         }}
-        ListEmptyComponent={<EmptyState title="No local items" message="Try a different category, shorter search term, or pull to refresh." />}
+        ListEmptyComponent={
+          locationReady ? <EmptyState title="No local items" message="Pull to refresh or try again later." /> : null
+        }
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       />
 
-      <BottomSheet visible={locationSheetOpen} title="Change Location" onClose={() => setLocationSheetOpen(false)}>
+      <BottomSheet visible={locationSheetOpen} title="Set Location" onClose={() => setLocationSheetOpen(false)}>
         <AppText variant="caption" tone="muted" style={{ marginBottom: spacing.sm }}>Choose a state, then a district.</AppText>
         <View style={styles.locationGrid}>
           <View style={styles.locationColumn}>
             <AppText variant="label">State</AppText>
             <FlatList
-              data={states.slice(0, 18)}
+              data={states.slice(0, 24)}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <Chip
                   label={item.name}
-                  selected={(selectedState?.id || profile.stateId) === item.id}
+                  selected={(activeState?.id || profile.stateId) === item.id}
                   onPress={() => setSelectedState(item)}
                   compact
                   style={{ alignSelf: 'flex-start', marginBottom: spacing.sm }}
@@ -227,16 +261,15 @@ export default function LocalScreen() {
           <View style={styles.locationColumn}>
             <AppText variant="label">District</AppText>
             <FlatList
-              data={districtChoices.slice(0, 24)}
+              data={districtChoices.slice(0, 30)}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
-                const state = selectedState || states.find((entry) => entry.name === profile.stateName);
-                if (!state) return null;
+                if (!activeState) return null;
                 return (
                   <Chip
                     label={item.name}
                     selected={profile.districtId === item.id}
-                    onPress={() => applyDistrict(state, item)}
+                    onPress={() => applyDistrict(activeState, item)}
                     compact
                     style={{ alignSelf: 'flex-start', marginBottom: spacing.sm }}
                   />
@@ -254,19 +287,27 @@ export default function LocalScreen() {
 const styles = StyleSheet.create({
   content: { paddingBottom: 104 },
   header: { padding: spacing.lg },
-  localHero: { borderRadius: 22, padding: spacing.xl, gap: spacing.sm },
+  emptyLocation: { borderRadius: radius.card, borderWidth: 1, padding: spacing.xl, gap: spacing.md },
+  localHero: { borderRadius: radius.card, padding: spacing.xl, gap: spacing.sm },
+  sourceLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  savedNotice: {
+    borderWidth: 1,
+    borderRadius: radius.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   docCard: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
-    borderRadius: 16,
+    borderRadius: radius.card,
     borderWidth: 1,
     padding: spacing.md,
     gap: spacing.sm,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
-  summaryBox: { borderRadius: 12, borderWidth: 1, padding: spacing.md, gap: spacing.sm },
   locationGrid: { flexDirection: 'row', gap: spacing.md, minHeight: 320 },
   locationColumn: { flex: 1, gap: spacing.sm },
   locationList: { maxHeight: 320 },

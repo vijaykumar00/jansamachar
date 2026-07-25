@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/design-system';
 
 const STEPS = ['Welcome', 'Profession', 'Location', 'Interests', 'Language'];
+const VISIBLE_INTERESTS = INTERESTS.slice(0, 8);
 
 function Progress({ step }: { step: number }) {
   const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
@@ -187,7 +188,7 @@ export default function OnboardingScreen() {
           <>
             <SectionHeader title="Pick interests" eyebrow="Choose at least one; three or more works best" />
             <View style={styles.grid}>
-              {INTERESTS.map((item) => (
+              {VISIBLE_INTERESTS.map((item) => (
                 <Chip
                   key={item.id}
                   icon={item.emoji}
@@ -244,7 +245,7 @@ const styles = StyleSheet.create({
   progressTrack: { height: 4 },
   progressFill: { height: 4, borderRadius: 999 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.lg },
-  skipButton: { minHeight: 36, paddingVertical: spacing.xs, paddingHorizontal: spacing.md },
+  skipButton: { minHeight: 48, paddingVertical: spacing.xs, paddingHorizontal: spacing.md },
   content: { padding: spacing.lg, paddingBottom: 24 },
   hero: { borderRadius: 24, padding: spacing.xl, gap: spacing.lg },
   heroBullets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

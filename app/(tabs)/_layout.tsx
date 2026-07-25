@@ -40,7 +40,7 @@ export default function TabLayout() {
           paddingTop: spacing.sm,
           paddingBottom: Platform.OS === 'ios' ? 22 : spacing.sm,
           elevation: 12,
-          shadowColor: '#000',
+          shadowColor: Colors.light.ink,
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: isDark ? 0.35 : 0.08,
           shadowRadius: 10,
@@ -52,7 +52,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarAccessibilityLabel: 'Home tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="⌂" label="Home" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="H" label="Home" />,
         }}
       />
       <Tabs.Screen
@@ -60,7 +60,7 @@ export default function TabLayout() {
         options={{
           title: 'Explore',
           tabBarAccessibilityLabel: 'Explore tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="⌕" label="Explore" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="Q" label="Explore" />,
         }}
       />
       <Tabs.Screen
@@ -68,7 +68,7 @@ export default function TabLayout() {
         options={{
           title: 'Local',
           tabBarAccessibilityLabel: 'Local and civic documents tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="⌖" label="Local" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="L" label="Local" />,
         }}
       />
       <Tabs.Screen
@@ -76,7 +76,7 @@ export default function TabLayout() {
         options={{
           title: 'Video',
           tabBarAccessibilityLabel: 'Video news tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="▶" label="Video" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="V" label="Video" />,
         }}
       />
       <Tabs.Screen
@@ -84,7 +84,7 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarAccessibilityLabel: 'Profile tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="○" label="Profile" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="P" label="Profile" />,
         }}
       />
     </Tabs>

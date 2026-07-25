@@ -6,31 +6,36 @@ import {
   StyleSheet,
   View,
   useColorScheme,
+  useWindowDimensions,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS } from '@/constants/professions';
-import { spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
 import { useProfileStore } from '@/store/userProfileStore';
 import { buildPersonalizedFeed, getGreeting, type FeedSection } from '@/services/personalizationService';
 import { searchYouTubeNews } from '@/services/youtubeSearchService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
-import AnimatedNewsCard, { type NewsCardItem } from '@/components/AnimatedNewsCard';
+import AnimatedNewsCard, { type NewsCardItem, type NewsCardVariant } from '@/components/AnimatedNewsCard';
 import {
   AppText,
   Chip,
   EmptyState,
   IconButton,
   JanSamacharLogo,
-  LoadingState,
   Screen,
   SectionHeader,
+  SkeletonBlock,
 } from '@/components/ui/design-system';
 
-type FeedEntry =
-  | { type: 'section'; id: string; title: string; eyebrow: string }
-  | { type: 'story'; id: string; item: NewsCardItem; featured?: boolean };
+type FeedEntry = { type: 'story'; id: string; item: NewsCardItem; variant: NewsCardVariant };
+type HomeFeedResult = {
+  sections: FeedSection[];
+  fetchedAt: string;
+  isFallback: boolean;
+  fallbackLabel?: string;
+};
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -41,17 +46,25 @@ const FILTERS = [
   { id: 'interest', label: 'Interests' },
 ];
 
+let lastSuccessfulHomeFeed: HomeFeedResult | null = null;
+
 function toFallbackSections(): FeedSection[] {
   return [
     {
       id: 'national',
       title: 'Top stories',
-      titleHi: 'आज की बड़ी खबरें',
+      titleHi: 'Top stories',
       emoji: 'IN',
       items: MOCK_NEWS_ITEMS,
       geoLevel: 'national',
     },
   ];
+}
+
+function formatSavedTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return 'earlier';
+  return date.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
 }
 
 function getStableStoryId(item: NewsCardItem, sectionId: string, index: number): string {
@@ -88,30 +101,167 @@ function normalizeSectionItems(sections: FeedSection[]): FeedSection[] {
   }));
 }
 
-async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>['profile']) {
-  const [sections, breaking] = await Promise.all([
-    buildPersonalizedFeed(profile),
-    searchYouTubeNews('India breaking news today', 5),
-  ]);
-  const hasStories = sections.some((section) => section.items.length > 0);
-  return {
-    sections: normalizeSectionItems(hasStories ? sections : toFallbackSections()),
-    breaking: breaking.map((item) => item.title).filter(Boolean),
-  };
+function flattenSections(sections: FeedSection[], filter: string): NewsCardItem[] {
+  const filtered = sections.filter((section) => filter === 'all' || section.geoLevel === filter);
+  const seen = new Set<string>();
+  const items: NewsCardItem[] = [];
+
+  filtered.forEach((section) => {
+    section.items.forEach((item) => {
+      const key = item.id || `${item.title}_${item.publishedAt}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(item as NewsCardItem);
+    });
+  });
+
+  return items;
 }
 
-function BreakingTicker({ items }: { items: string[] }) {
+function isBreakingStory(item: NewsCardItem): boolean {
+  const raw = item as NewsCardItem & {
+    isBreaking?: boolean;
+    breaking?: boolean;
+    is_breaking?: boolean;
+  };
+  return Boolean(
+    raw.isBreaking ||
+    raw.breaking ||
+    raw.is_breaking ||
+    item.trustLevel === 'breaking' ||
+    item.category === 'breaking'
+  );
+}
+
+function isVideoStory(item: NewsCardItem): boolean {
+  return Boolean(item.videoId || item.source === 'youtube');
+}
+
+function isLocalStory(item: NewsCardItem): boolean {
+  return item.category === 'state' || item.source === 'citizen';
+}
+
+function buildMixedEntries(items: NewsCardItem[], hasLocation: boolean): FeedEntry[] {
+  const articleItems = items.filter((item) => !isVideoStory(item) && !isLocalStory(item));
+  const videoItems = items.filter(isVideoStory);
+  const localItems = items.filter((item) => isLocalStory(item));
+  const entries: FeedEntry[] = [];
+  let videoIndex = 0;
+  let localIndex = 0;
+
+  articleItems.forEach((item, index) => {
+    if ((index + 1) % 6 === 0 && videoItems[videoIndex]) {
+      const video = videoItems[videoIndex];
+      entries.push({ type: 'story', id: `video_${video.id}_${videoIndex}`, item: video, variant: 'video' });
+      videoIndex += 1;
+    }
+
+    if (hasLocation && (index + 1) % 8 === 0 && localItems[localIndex]) {
+      const local = localItems[localIndex];
+      entries.push({ type: 'story', id: `local_${local.id}_${localIndex}`, item: local, variant: 'local' });
+      localIndex += 1;
+    }
+
+    entries.push({ type: 'story', id: `article_${item.id}_${index}`, item, variant: 'article' });
+  });
+
+  while (entries.length < 12 && videoItems[videoIndex]) {
+    const video = videoItems[videoIndex];
+    entries.push({ type: 'story', id: `video_tail_${video.id}_${videoIndex}`, item: video, variant: 'video' });
+    videoIndex += 1;
+  }
+
+  return entries;
+}
+
+async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>['profile']): Promise<HomeFeedResult> {
+  try {
+    const [sections, breakingVideos] = await Promise.all([
+      buildPersonalizedFeed(profile),
+      searchYouTubeNews('India breaking news today', 5),
+    ]);
+    const hasStories = sections.some((section) => section.items.length > 0);
+    const normalizedSections = normalizeSectionItems(hasStories ? sections : toFallbackSections());
+    const breakingItems = breakingVideos.map((item) => ({
+      id: `breaking_${item.videoId}`,
+      title: item.title,
+      description: item.description,
+      thumbnailUrl: item.thumbnailUrl,
+      channelName: item.channelName,
+      publishedAt: item.publishedAt,
+      url: `https://www.youtube.com/watch?v=${item.videoId}`,
+      videoId: item.videoId,
+      source: 'youtube',
+      trustLevel: 'breaking',
+      category: 'breaking',
+    })) as NewsCardItem[];
+
+    const result = {
+      sections: normalizeSectionItems([
+        { id: 'breaking', title: 'Breaking', titleHi: 'Breaking', emoji: '!', items: breakingItems as any, geoLevel: 'national' },
+        ...normalizedSections,
+      ].filter((section) => section.items.length > 0) as FeedSection[]),
+      fetchedAt: new Date().toISOString(),
+      isFallback: !hasStories,
+      fallbackLabel: !hasStories ? `Showing saved stories from ${formatSavedTime(new Date().toISOString())}` : undefined,
+    };
+
+    if (hasStories) lastSuccessfulHomeFeed = result;
+    return result;
+  } catch {
+    const saved = lastSuccessfulHomeFeed;
+    if (saved) {
+      return {
+        ...saved,
+        isFallback: true,
+        fallbackLabel: `Showing saved stories from ${formatSavedTime(saved.fetchedAt)}`,
+      };
+    }
+
+    const fetchedAt = new Date().toISOString();
+    return {
+      sections: normalizeSectionItems(toFallbackSections()),
+      fetchedAt,
+      isFallback: true,
+      fallbackLabel: `Showing saved stories from ${formatSavedTime(fetchedAt)}`,
+    };
+  }
+}
+
+function BreakingBand({ item, onDismiss }: { item: NewsCardItem; onDismiss: () => void }) {
   const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
-  const fallback = MOCK_NEWS_ITEMS.slice(0, 3).map((item) => item.title);
-  const headlines = items.length > 0 ? items : fallback;
+  return (
+    <View style={[styles.breakingBand, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.coral }]}>
+      <View style={styles.breakingText}>
+        <AppText variant="badge" tone="danger">BREAKING</AppText>
+        <AppText variant="caption" tone="secondary" numberOfLines={1}>{item.title}</AppText>
+      </View>
+      <IconButton label="Dismiss breaking news" icon="X" onPress={onDismiss} style={styles.dismissButton} />
+    </View>
+  );
+}
+
+function RefreshIndicator({ visible }: { visible: boolean }) {
+  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  if (!visible) return null;
 
   return (
-    <View style={[styles.breaking, { backgroundColor: C.surface, borderColor: C.border }]}>
-      <View style={[styles.liveDot, { backgroundColor: C.live }]} />
-      <AppText variant="badge" tone="danger">BREAKING</AppText>
-      <AppText variant="caption" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-        {headlines[0]}
-      </AppText>
+    <View style={[styles.refreshIndicator, { borderColor: C.coral, backgroundColor: C.surface }]}>
+      <View style={[styles.refreshDot, { backgroundColor: C.coral }]} />
+      <AppText variant="caption" tone="secondary">Refreshing latest stories</AppText>
+    </View>
+  );
+}
+
+function HomeSkeletonList() {
+  return (
+    <View style={styles.skeletonList}>
+      {[0, 1, 2].map((item) => (
+        <View key={item} style={styles.skeletonCard}>
+          <SkeletonBlock height={190} borderRadius={radius.card} />
+          <SkeletonBlock height={170} borderRadius={radius.card} />
+        </View>
+      ))}
     </View>
   );
 }
@@ -119,10 +269,14 @@ function BreakingTicker({ items }: { items: string[] }) {
 export default function HomeScreen() {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
+  const { width } = useWindowDimensions();
   const { profile, isLoaded } = useProfileStore();
   const [filter, setFilter] = useState('all');
+  const [breakingDismissed, setBreakingDismissed] = useState(false);
   const profession = PROFESSIONS.find((item) => item.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
   const selectedInterests = INTERESTS.filter((interest) => profile.interests.includes(interest.id)).slice(0, 3);
+  const hasLocation = Boolean(profile.stateName && profile.districtName);
+  const cardInterval = Math.max(172, width / 2.2);
 
   const query = useQuery({
     queryKey: ['home-feed', profile.stateName, profile.districtName, profile.profession, profile.interests.join(','), profile.language],
@@ -131,23 +285,22 @@ export default function HomeScreen() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const entries = useMemo<FeedEntry[]>(() => {
-    const sections = (query.data?.sections || []).filter(
-      (section) => filter === 'all' || section.geoLevel === filter
-    );
-    const output: FeedEntry[] = [];
-
-    sections.forEach((section) => {
-      const items = section.items.filter(Boolean) as NewsCardItem[];
-      if (items.length === 0) return;
-      output.push({ type: 'section', id: `header_${section.id}`, title: section.titleHi, eyebrow: section.title });
-      items.slice(0, 8).forEach((item, index) => {
-        output.push({ type: 'story', id: `${section.id}_${item.id}_${index}`, item, featured: output.length < 3 });
-      });
-    });
-
-    return output;
-  }, [filter, query.data?.sections]);
+  const flatItems = useMemo(
+    () => flattenSections(query.data?.sections || [], filter),
+    [filter, query.data?.sections]
+  );
+  const breakingItem = useMemo(
+    () => flatItems.find(isBreakingStory),
+    [flatItems]
+  );
+  const topStories = useMemo(
+    () => flatItems.filter((item) => !isVideoStory(item)).slice(0, 8),
+    [flatItems]
+  );
+  const entries = useMemo(
+    () => buildMixedEntries(flatItems.filter((item) => !isBreakingStory(item)), hasLocation),
+    [flatItems, hasLocation]
+  );
 
   return (
     <Screen>
@@ -159,8 +312,9 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={query.isRefetching}
             onRefresh={query.refetch}
-            colors={[C.primary]}
-            tintColor={C.primary}
+            colors={[C.coral]}
+            tintColor={C.coral}
+            progressBackgroundColor={C.surface}
           />
         }
         ListHeaderComponent={
@@ -172,25 +326,36 @@ export default function HomeScreen() {
                 <IconButton label="Refresh feed" icon="!" onPress={() => query.refetch()} />
               </View>
             </View>
+
+            {!breakingDismissed && breakingItem ? (
+              <BreakingBand item={breakingItem} onDismiss={() => setBreakingDismissed(true)} />
+            ) : null}
+
+            {query.data?.fallbackLabel ? (
+              <View style={[styles.savedNotice, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
+                <AppText variant="caption" tone="secondary">{query.data.fallbackLabel}</AppText>
+              </View>
+            ) : null}
+
+            <RefreshIndicator visible={query.isRefetching && !query.isLoading} />
+
             <View style={[styles.hero, { backgroundColor: C.secondary }]}>
-              <AppText variant="caption" tone="inverse">{getGreeting()} • {profile.districtName}, {profile.stateName}</AppText>
+              <AppText variant="caption" tone="inverse">{getGreeting()} - {profile.districtName}, {profile.stateName}</AppText>
               <AppText variant="display" tone="inverse">News that matters to you</AppText>
               <AppText variant="body" tone="inverse" style={{ opacity: 0.76 }}>
                 Built around your location, profession, language, and trusted sources.
               </AppText>
               <View style={styles.profilePills}>
-                <View style={[styles.profilePill, { backgroundColor: C.primary }]}>
+                <View style={[styles.profilePill, { backgroundColor: C.coral }]}>
                   <AppText variant="badge" tone="inverse">{profession.emoji} {profession.label}</AppText>
                 </View>
                 {selectedInterests.map((interest) => (
-                  <View key={interest.id} style={[styles.profilePill, { backgroundColor: C.accent }]}>
+                  <View key={interest.id} style={[styles.profilePill, { backgroundColor: C.primaryDark }]}>
                     <AppText variant="badge" tone="inverse">{interest.label}</AppText>
                   </View>
                 ))}
               </View>
             </View>
-
-            <BreakingTicker items={query.data?.breaking || []} />
 
             <View style={styles.filterRow}>
               <FlatList
@@ -198,30 +363,42 @@ export default function HomeScreen() {
                 data={FILTERS}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
-                  <Chip label={item.label} selected={filter === item.id} onPress={() => setFilter(item.id)} />
+                  <Chip label={item.label} selected={filter === item.id} onPress={() => setFilter(item.id)} compact />
                 )}
                 showsHorizontalScrollIndicator={false}
                 ItemSeparatorComponent={() => <View style={{ width: spacing.sm }} />}
               />
             </View>
+
+            {topStories.length > 0 ? (
+              <>
+                <SectionHeader title="Top Stories" eyebrow="Latest verified updates" />
+                <FlatList
+                  horizontal
+                  data={topStories}
+                  keyExtractor={(item, index) => `top_${item.id}_${index}`}
+                  renderItem={({ item, index }) => (
+                    <View style={{ width: cardInterval }}>
+                      <AnimatedNewsCard item={item} index={index} variant="article" />
+                    </View>
+                  )}
+                  snapToInterval={cardInterval}
+                  decelerationRate="fast"
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.topStoriesContent}
+                />
+              </>
+            ) : null}
+
+            <SectionHeader title="Your Feed" eyebrow="Articles, video, and local signal" />
           </View>
         }
-        renderItem={({ item, index }) => {
-          if (item.type === 'section') {
-            return <SectionHeader title={item.title} eyebrow={item.eyebrow} />;
-          }
-          return (
-            <AnimatedNewsCard
-              item={item.item}
-              index={index}
-              featured={item.featured}
-              variant={item.item.videoId || item.item.source === 'youtube' ? 'video' : item.item.category === 'state' ? 'local' : 'article'}
-            />
-          );
-        }}
+        renderItem={({ item, index }) => (
+          <AnimatedNewsCard item={item.item} index={index} variant={item.variant} />
+        )}
         ListEmptyComponent={
           query.isLoading ? (
-            <LoadingState label={`${profile.districtName} news is loading...`} />
+            <HomeSkeletonList />
           ) : (
             <EmptyState
               title="No stories found"
@@ -248,24 +425,53 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   headerActions: { flexDirection: 'row', gap: spacing.sm },
+  breakingBand: {
+    minHeight: 42,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    marginBottom: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  breakingText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dismissButton: { width: 48, height: 48, minWidth: 48, minHeight: 48, borderRadius: radius.control },
+  savedNotice: {
+    borderWidth: 1,
+    borderRadius: radius.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  refreshIndicator: {
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  refreshDot: { width: 8, height: 8, borderRadius: 4 },
   hero: {
-    borderRadius: 22,
+    borderRadius: radius.card,
     padding: spacing.xl,
     gap: spacing.sm,
     overflow: 'hidden',
   },
   profilePills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
-  profilePill: { borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  breaking: {
-    minHeight: 44,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  profilePill: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   filterRow: { marginTop: spacing.lg },
+  topStoriesContent: { paddingRight: spacing.lg },
+  skeletonList: { paddingHorizontal: spacing.lg, gap: spacing.md },
+  skeletonCard: {
+    borderRadius: radius.card,
+    overflow: 'hidden',
+    gap: 0,
+  },
 });

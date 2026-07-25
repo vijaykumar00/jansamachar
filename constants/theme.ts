@@ -47,7 +47,7 @@ export const typography = {
 export const layout = {
   screenPadding: spacing.lg,
   tabBarHeight: 74,
-  minTouch: 44,
+  minTouch: 48,
   maxContentWidth: 720,
 };
 

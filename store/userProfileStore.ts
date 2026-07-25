@@ -26,6 +26,7 @@ export interface UserProfile {
   breakingAlerts: boolean;
   dataSaver: boolean;
   videoAutoplay: boolean;
+  readerFontScale: number;
   // Greeting name (optional, from auth)
   displayName?: string;
 }
@@ -54,6 +55,7 @@ const DEFAULT_PROFILE: UserProfile = {
   breakingAlerts: true,
   dataSaver: false,
   videoAutoplay: false,
+  readerFontScale: 1,
 };
 
 const STORAGE_KEY = 'jansamachar_user_profile_v2';

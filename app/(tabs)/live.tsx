@@ -1,181 +1,192 @@
-import React, { useMemo, useState } from 'react';
-import { Alert, FlatList, Linking, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
+import React, { useMemo } from 'react';
+import { FlatList, Linking, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
-import { spacing } from '@/constants/theme';
+import { radius, spacing } from '@/constants/theme';
 import { MOCK_LIVE_STREAMS, MOCK_NEWS_ITEMS } from '@/services/mockData';
-import { getActiveLiveStreamCards, type LiveStreamCard } from '@/services/supabaseService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
-import AnimatedNewsCard, { type NewsCardItem } from '@/components/AnimatedNewsCard';
-import {
-  AppButton,
-  AppText,
-  Badge,
-  Chip,
-  EmptyState,
-  IconButton,
-  LoadingState,
-  Screen,
-  SectionHeader,
-} from '@/components/ui/design-system';
+import { AppText, Badge, EmptyState, IconButton, LoadingState, Screen, SectionHeader } from '@/components/ui/design-system';
+import type { NewsCardItem } from '@/components/AnimatedNewsCard';
 
-const FILTERS = ['All', 'Live', 'Explainers', 'Fact checks', 'Ground reports'];
-
-function formatViewers(n: number): string {
-  if (n >= 100000) return `${(n / 100000).toFixed(1)}L`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
-}
+type LongFormItem = {
+  id: string;
+  title: string;
+  channelName: string;
+  thumbnailUrl: string;
+  url: string;
+  isLive?: boolean;
+  viewers?: number;
+};
 
 async function loadVideoTab() {
-  const [streams, videos] = await Promise.allSettled([
-    getActiveLiveStreamCards(),
-    searchYouTubeNews('India news explainers live fact check ground report', 14),
+  const [clips, longForm] = await Promise.allSettled([
+    searchYouTubeNews('India news shorts latest clips', 18),
+    searchYouTubeNews('India news live long form analysis', 10),
   ]);
 
-  const liveStreams = streams.status === 'fulfilled' && streams.value.length > 0
-    ? streams.value
-    : MOCK_LIVE_STREAMS.map((stream): LiveStreamCard => ({
-        id: stream.id,
-        title: stream.title,
-        streamer: stream.streamer,
-        viewers: stream.viewers,
-        thumbnail: stream.thumbnail,
-        isLive: stream.isLive,
-        hasDoc: stream.hasDoc,
-        startedAt: stream.startedAt,
-        category: stream.category,
-      }));
+  const clipItems = clips.status === 'fulfilled' ? clips.value.map(ytSearchToNewsItem) : [];
+  const longItems = longForm.status === 'fulfilled' ? longForm.value.map(ytSearchToNewsItem) : [];
 
-  const liveVideos = videos.status === 'fulfilled' ? videos.value.map(ytSearchToNewsItem) : [];
-  const fallbackVideos = MOCK_NEWS_ITEMS.filter((item) => item.videoId || item.source === 'youtube');
+  const fallbackClips = MOCK_NEWS_ITEMS.filter((item) => item.videoId || item.source === 'youtube');
+  const fallbackLongForm = MOCK_LIVE_STREAMS.map((stream): LongFormItem => ({
+    id: stream.id,
+    title: stream.title,
+    channelName: stream.streamer,
+    thumbnailUrl: stream.thumbnail,
+    url: 'https://youtube.com',
+    isLive: stream.isLive,
+    viewers: stream.viewers,
+  }));
+
+  const usingFallback = clipItems.length === 0 && longItems.length === 0;
 
   return {
-    streams: liveStreams,
-    videos: liveVideos.length > 0 ? liveVideos : fallbackVideos,
+    clips: (clipItems.length > 0 ? clipItems : fallbackClips).map((item, index): NewsCardItem => ({
+      ...item,
+      duration: index % 3 === 0 ? '0:45' : index % 3 === 1 ? '1:20' : '2:10',
+    })),
+    longForm: longItems.length > 0
+      ? longItems.map((item): LongFormItem => ({
+          id: item.id,
+          title: item.title,
+          channelName: item.channelName,
+          thumbnailUrl: item.thumbnailUrl || '',
+          url: item.url || 'https://youtube.com',
+        }))
+      : fallbackLongForm,
+    fallbackLabel: usingFallback ? `Showing saved stories from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
   };
 }
 
-function matchesFilter(item: NewsCardItem, filter: string) {
-  if (filter === 'All') return true;
-  if (filter === 'Live') return item.source === 'youtube';
-  if (filter === 'Fact checks') return item.category === 'fact_check' || item.channelName.toLowerCase().includes('fact');
-  if (filter === 'Ground reports') return item.category === 'state' || item.channelName.toLowerCase().includes('ground');
-  return item.title.toLowerCase().includes('explainer') || item.category === 'technology';
+function formatViewers(n?: number): string {
+  if (!n) return '';
+  if (n >= 100000) return `${(n / 100000).toFixed(1)}L watching`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K watching`;
+  return `${n} watching`;
+}
+
+function LongFormCard({ item }: { item: LongFormItem }) {
+  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => Linking.openURL(item.url)}
+      style={({ pressed }) => [
+        styles.longCard,
+        { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
+      ]}
+    >
+      {item.thumbnailUrl ? (
+        <Image source={{ uri: item.thumbnailUrl }} style={styles.longThumb} contentFit="cover" cachePolicy="memory-disk" />
+      ) : (
+        <View style={[styles.longThumb, styles.fallbackThumb, { backgroundColor: C.surfaceElevated }]}>
+          <AppText variant="badge" tone="muted">VIDEO</AppText>
+        </View>
+      )}
+      <View style={styles.longBody}>
+        <View style={styles.longTop}>
+          <Badge label={item.isLive ? 'LIVE' : 'Long-form'} tone={item.isLive ? 'live' : 'video'} />
+          {item.viewers ? <AppText variant="caption" tone="muted">{formatViewers(item.viewers)}</AppText> : null}
+        </View>
+        <AppText variant="cardTitle" numberOfLines={2}>{item.title}</AppText>
+        <AppText variant="caption" tone="muted" numberOfLines={1}>{item.channelName}</AppText>
+      </View>
+    </Pressable>
+  );
+}
+
+function ClipPage({ item, height }: { item: NewsCardItem; height: number }) {
+  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => Linking.openURL(item.url || 'https://youtube.com')}
+      style={[styles.clipPage, { height, backgroundColor: C.background }]}
+    >
+      <View style={[styles.clipFrame, { backgroundColor: C.secondary }]}>
+        {item.thumbnailUrl ? (
+          <Image source={{ uri: item.thumbnailUrl }} style={styles.clipImage} contentFit="cover" cachePolicy="memory-disk" />
+        ) : null}
+        <View style={[styles.clipOverlay, { backgroundColor: C.overlay }]}>
+          <View style={styles.clipTop}>
+            <Badge label={item.duration || 'SHORT'} tone="video" />
+            <IconButton label="Share clip" icon=">" />
+          </View>
+          <View style={styles.playCircle}>
+            <AppText variant="screenTitle" tone="inverse">PLAY</AppText>
+          </View>
+          <View style={styles.clipBottom}>
+            <AppText variant="headline" tone="inverse" numberOfLines={2}>{item.title}</AppText>
+            <AppText variant="caption" tone="inverse" numberOfLines={1} style={{ opacity: 0.78 }}>{item.channelName}</AppText>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
 }
 
 export default function VideoScreen() {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
-  const [filter, setFilter] = useState('All');
+  const { height } = useWindowDimensions();
+  const pageHeight = Math.max(520, height - 210);
   const query = useQuery({
-    queryKey: ['video-tab'],
+    queryKey: ['video-tab-swipe'],
     queryFn: loadVideoTab,
     staleTime: 1000 * 60 * 4,
   });
 
-  const videos = useMemo(
-    () => (query.data?.videos || []).filter((item) => matchesFilter(item, filter)),
-    [filter, query.data?.videos]
-  );
-  const featured = videos[0] || MOCK_NEWS_ITEMS.find((item) => item.videoId) || MOCK_NEWS_ITEMS[0];
-  const streams = query.data?.streams || [];
+  const clips = query.data?.clips || [];
+  const longForm = query.data?.longForm || [];
+
+  const header = useMemo(() => (
+    <View style={styles.header}>
+      <AppText variant="screenTitle">Video</AppText>
+      <AppText variant="body" tone="secondary">Swipe clips vertically. Long-form and live streams stay up top.</AppText>
+      {query.data?.fallbackLabel ? (
+        <View style={[styles.savedNotice, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
+          <AppText variant="caption" tone="secondary">{query.data.fallbackLabel}</AppText>
+        </View>
+      ) : null}
+      <SectionHeader title="Long-form and live" eyebrow={query.isFetching ? 'Refreshing' : 'YouTube sources'} />
+      <FlatList
+        horizontal
+        data={longForm}
+        keyExtractor={(item, index) => `${item.id}_${index}`}
+        renderItem={({ item }) => <LongFormCard item={item} />}
+        showsHorizontalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ width: spacing.md }} />}
+        contentContainerStyle={{ paddingRight: spacing.lg }}
+      />
+      <SectionHeader title="Short clips" eyebrow="Swipe vertically" />
+    </View>
+  ), [longForm, query.isFetching]);
 
   return (
     <Screen>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
       <FlatList
-        data={videos.slice(1)}
+        data={clips}
         keyExtractor={(item, index) => `${item.id}_${index}`}
+        renderItem={({ item }) => <ClipPage item={item} height={pageHeight} />}
+        pagingEnabled
+        snapToInterval={pageHeight}
+        decelerationRate="fast"
+        ListHeaderComponent={header}
         refreshControl={
           <RefreshControl
             refreshing={query.isRefetching}
             onRefresh={query.refetch}
-            colors={[C.primary]}
-            tintColor={C.primary}
+            colors={[C.coral]}
+            tintColor={C.coral}
           />
         }
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <View style={[styles.player, { backgroundColor: C.secondary }]}>
-              {featured.thumbnailUrl ? (
-                <Image
-                  source={{ uri: featured.thumbnailUrl }}
-                  style={styles.playerImage}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={180}
-                />
-              ) : null}
-              <View style={[styles.playerOverlay, { backgroundColor: C.overlay }]}>
-                <View style={styles.playerTop}>
-                  <Badge label="Featured video" tone="video" icon="VID" />
-                  <IconButton label="Share featured video" icon=">" />
-                </View>
-                <View style={styles.playerBottom}>
-                  <AppText variant="screenTitle" tone="inverse" numberOfLines={2}>{featured.title}</AppText>
-                  <AppText variant="caption" tone="inverse" style={{ opacity: 0.78 }}>
-                    {featured.channelName} - sound starts only after play
-                  </AppText>
-                  <AppButton
-                    label="Watch now"
-                    icon="PLAY"
-                    onPress={() => Linking.openURL(featured.url || 'https://youtube.com')}
-                    style={{ alignSelf: 'flex-start', marginTop: spacing.sm }}
-                  />
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.filterRow}>
-              {FILTERS.map((item) => (
-                <Chip key={item} label={item} selected={filter === item} onPress={() => setFilter(item)} compact />
-              ))}
-            </View>
-
-            <SectionHeader title="Live channels" eyebrow="Supabase realtime when configured" />
-            <View style={styles.liveStack}>
-              {streams.map((stream) => (
-                <Pressable
-                  key={stream.id}
-                  accessibilityRole="button"
-                  onPress={() => Alert.alert('Live stream', stream.agoraChannel ? `Agora channel: ${stream.agoraChannel}` : 'Live playback activates when streaming is configured.')}
-                  style={({ pressed }) => [
-                    styles.liveCard,
-                    { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
-                  ]}
-                >
-                  {stream.thumbnail ? (
-                    <Image source={{ uri: stream.thumbnail }} style={styles.liveThumb} contentFit="cover" cachePolicy="memory-disk" />
-                  ) : (
-                    <View style={[styles.liveThumb, styles.liveFallback, { backgroundColor: C.surfaceElevated }]}>
-                      <AppText variant="badge" tone="muted">LIVE</AppText>
-                    </View>
-                  )}
-                  <View style={styles.liveText}>
-                    <View style={styles.cardTop}>
-                      <Badge label="LIVE" tone="live" />
-                      <AppText variant="caption" tone="muted">{formatViewers(stream.viewers)} watching</AppText>
-                    </View>
-                    <AppText variant="cardTitle" numberOfLines={2}>{stream.title}</AppText>
-                    <AppText variant="caption" tone="muted">{stream.streamer}</AppText>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-
-            <SectionHeader title="Latest videos" eyebrow={query.isFetching ? 'Refreshing trusted channels' : 'Trusted channels'} />
-          </View>
-        }
-        renderItem={({ item, index }) => (
-          <AnimatedNewsCard item={item} index={index} variant="video" />
-        )}
         ListEmptyComponent={
           query.isLoading ? (
             <LoadingState label="Loading trusted videos..." />
           ) : (
-            <EmptyState title="No videos available" message="Try another filter or pull to refresh." />
+            <EmptyState title="No videos available" message="Pull to refresh when video sources update." />
           )
         }
         contentContainerStyle={styles.content}
@@ -187,17 +198,23 @@ export default function VideoScreen() {
 
 const styles = StyleSheet.create({
   content: { paddingBottom: 104 },
-  header: { padding: spacing.lg },
-  player: { borderRadius: 22, overflow: 'hidden', minHeight: 320 },
-  playerImage: { ...StyleSheet.absoluteFill },
-  playerOverlay: { flex: 1, padding: spacing.lg, justifyContent: 'space-between' },
-  playerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  playerBottom: { gap: spacing.xs },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.lg },
-  liveStack: { gap: spacing.md },
-  liveCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden', flexDirection: 'row' },
-  liveThumb: { width: 118, minHeight: 112 },
-  liveFallback: { alignItems: 'center', justifyContent: 'center' },
-  liveText: { flex: 1, padding: spacing.md, gap: spacing.sm },
-  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  header: { padding: spacing.lg, gap: spacing.sm },
+  longCard: { width: 270, borderRadius: radius.card, borderWidth: 1, overflow: 'hidden' },
+  longThumb: { width: '100%', aspectRatio: 16 / 9 },
+  fallbackThumb: { alignItems: 'center', justifyContent: 'center' },
+  longBody: { padding: spacing.md, gap: spacing.sm },
+  savedNotice: {
+    borderWidth: 1,
+    borderRadius: radius.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  longTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  clipPage: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  clipFrame: { flex: 1, borderRadius: radius.card, overflow: 'hidden' },
+  clipImage: { ...StyleSheet.absoluteFill },
+  clipOverlay: { flex: 1, padding: spacing.lg, justifyContent: 'space-between' },
+  clipTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  playCircle: { alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
+  clipBottom: { gap: spacing.xs },
 });

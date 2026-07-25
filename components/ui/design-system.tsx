@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Animated,
   Modal,
@@ -16,13 +17,15 @@ import {
   ViewProps,
   ViewStyle,
 } from 'react-native';
+import GorhomBottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/colors';
 import { layout, radius, spacing, typography } from '@/constants/theme';
 
 type Tone = 'primary' | 'secondary' | 'muted' | 'inverse' | 'danger' | 'success' | 'info';
 type AppTextVariant = keyof typeof typography;
-type BadgeTone = 'primary' | 'verified' | 'live' | 'ai' | 'fact' | 'muted' | 'warning' | 'local' | 'video' | 'saved';
+type BadgeTone = 'primary' | 'verified' | 'live' | 'topic' | 'ai' | 'fact' | 'muted' | 'warning' | 'local' | 'video' | 'saved';
 
 export function useThemeColors() {
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
@@ -49,7 +52,7 @@ export function AppText({
   return (
     <Text
       allowFontScaling
-      maxFontSizeMultiplier={1.35}
+      maxFontSizeMultiplier={2}
       style={[typography[variant], { color: toneColor[tone] }, style]}
       {...props}
     />
@@ -117,12 +120,12 @@ export function AppButton({
 }) {
   const C = useThemeColors();
   const variantStyle = {
-    primary: { backgroundColor: C.primary, borderColor: C.primary },
-    secondary: { backgroundColor: C.surfaceElevated, borderColor: C.border },
-    ghost: { backgroundColor: 'transparent', borderColor: C.border },
+    primary: { backgroundColor: C.coral, borderColor: C.coral },
+    secondary: { backgroundColor: 'transparent', borderColor: C.border },
+    ghost: { backgroundColor: 'transparent', borderColor: 'transparent' },
     danger: { backgroundColor: C.live, borderColor: C.live },
   }[variant];
-  const labelColor = variant === 'primary' || variant === 'danger' ? C.textInverse : C.text;
+  const labelColor = variant === 'primary' || variant === 'danger' ? C.textInverse : variant === 'ghost' ? C.coral : C.text;
 
   return (
     <Pressable
@@ -169,7 +172,7 @@ export function Badge({
   icon,
   style,
 }: {
-  label: string;
+  label?: string;
   tone?: BadgeTone;
   icon?: string;
   style?: StyleProp<ViewStyle>;
@@ -179,6 +182,7 @@ export function Badge({
     primary: C.primary,
     verified: C.verified,
     live: C.live,
+    topic: C.textMuted,
     ai: C.trustAI,
     fact: C.factCheck,
     muted: C.textMuted,
@@ -187,11 +191,55 @@ export function Badge({
     video: C.video,
     saved: C.saved,
   }[tone];
+  const displayLabel = label || (tone === 'verified' ? 'Verified' : tone === 'live' ? 'LIVE' : '');
+  const displayIcon = icon || (tone === 'verified' ? '✓' : undefined);
   return (
     <View style={[styles.badge, { backgroundColor: color + '1F', borderColor: color + '55' }, style]}>
-      {icon ? <Text style={[styles.badgeIcon, { color }]}>{icon}</Text> : null}
-      <Text style={[typography.badge, { color }]}>{label}</Text>
+      {tone === 'live' ? <LivePulseDot color={color} /> : null}
+      {displayIcon ? <Text style={[styles.badgeIcon, { color }]}>{displayIcon}</Text> : null}
+      {displayLabel ? <Text style={[typography.badge, { color }]}>{displayLabel}</Text> : null}
     </View>
+  );
+}
+
+function LivePulseDot({ color }: { color: string }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let mounted = true;
+    let animation: Animated.CompositeAnimation | null = null;
+
+    AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (!mounted || reduceMotion) return;
+      animation = Animated.loop(
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(scale, { toValue: 1.45, duration: 620, useNativeDriver: true }),
+            Animated.timing(scale, { toValue: 1, duration: 620, useNativeDriver: true }),
+          ]),
+          Animated.sequence([
+            Animated.timing(opacity, { toValue: 0.48, duration: 620, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 1, duration: 620, useNativeDriver: true }),
+          ]),
+        ])
+      );
+      animation.start();
+    });
+
+    return () => {
+      mounted = false;
+      animation?.stop();
+    };
+  }, [opacity, scale]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.livePulseDot,
+        { backgroundColor: color, opacity, transform: [{ scale }] },
+      ]}
+    />
   );
 }
 
@@ -338,56 +386,47 @@ export function BottomSheet({
   title,
   children,
   onClose,
+  snapPoints = ['45%', '82%'],
 }: {
   visible: boolean;
   title?: string;
   children: React.ReactNode;
   onClose: () => void;
+  snapPoints?: Array<string | number>;
 }) {
   const C = useThemeColors();
-  const translateY = useRef(new Animated.Value(24)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    if (!visible) return;
-    translateY.setValue(24);
-    opacity.setValue(0);
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: 0, duration: 180, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
-    ]).start();
-  }, [opacity, translateY, visible]);
+  if (!visible) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.sheetRoot}>
+      <GestureHandlerRootView style={styles.sheetRoot}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close sheet"
           style={[styles.sheetBackdrop, { backgroundColor: C.overlay }]}
           onPress={onClose}
         />
-        <Animated.View
-          style={[
-            styles.sheetPanel,
-            {
-              backgroundColor: C.card,
-              borderColor: C.border,
-              opacity,
-              transform: [{ translateY }],
-            },
-          ]}
+        <GorhomBottomSheet
+          index={0}
+          snapPoints={snapPoints}
+          enablePanDownToClose
+          onClose={onClose}
+          backgroundStyle={{ backgroundColor: C.card, borderColor: C.border }}
+          handleIndicatorStyle={{ backgroundColor: C.textMuted }}
+          style={styles.gorhomSheet}
         >
-          <View style={styles.sheetHandle} />
-          {title ? (
-            <View style={styles.sheetHeader}>
-              <AppText variant="sectionTitle">{title}</AppText>
-              <IconButton label="Close" icon="X" onPress={onClose} />
-            </View>
-          ) : null}
-          {children}
-        </Animated.View>
-      </View>
+          <BottomSheetView style={styles.sheetContent}>
+            {title ? (
+              <View style={styles.sheetHeader}>
+                <AppText variant="sectionTitle">{title}</AppText>
+                <IconButton label="Close" icon="X" onPress={onClose} />
+              </View>
+            ) : null}
+            {children}
+          </BottomSheetView>
+        </GorhomBottomSheet>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -420,7 +459,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   buttonSmall: {
-    minHeight: 36,
+    minHeight: layout.minTouch,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
@@ -436,7 +475,7 @@ const styles = StyleSheet.create({
   },
   iconText: { fontSize: 20, fontWeight: '800' },
   badge: {
-    minHeight: 24,
+    minHeight: 28,
     borderRadius: radius.sm,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
@@ -447,8 +486,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   badgeIcon: { fontSize: 10, fontWeight: '900' },
+  livePulseDot: { width: 7, height: 7, borderRadius: 4 },
   chip: {
-    minHeight: 36,
+    minHeight: layout.minTouch,
     borderRadius: radius.round,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
@@ -458,7 +498,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   chipCompact: {
-    minHeight: 30,
+    minHeight: layout.minTouch,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
@@ -495,32 +535,18 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#E85D0420',
+    backgroundColor: Colors.light.coral + '20',
   },
-  emptyMarkText: { color: '#E85D04', fontSize: 25, fontWeight: '900', fontStyle: 'italic' },
+  emptyMarkText: { color: Colors.light.coral, fontSize: 25, fontWeight: '900', fontStyle: 'italic' },
   loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
   skeletonStack: { alignSelf: 'stretch', gap: spacing.md, marginTop: spacing.lg },
   skeleton: {},
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   sheetBackdrop: { ...StyleSheet.absoluteFill },
-  sheetPanel: {
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
-    borderWidth: 1,
-    borderBottomWidth: 0,
+  gorhomSheet: { overflow: 'hidden' },
+  sheetContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
     paddingBottom: spacing.xxl,
-    maxHeight: '82%',
-  },
-  sheetHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#8B98A8',
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-    opacity: 0.5,
   },
   sheetHeader: {
     flexDirection: 'row',

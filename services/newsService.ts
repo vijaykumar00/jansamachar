@@ -189,6 +189,11 @@ export async function fetchAllNews(): Promise<NewsItem[]> {
   return allNews;
 }
 
+export async function fetchNewsItemById(id: string): Promise<NewsItem | null> {
+  const allNews = await fetchAllNews();
+  return allNews.find((item) => item.id === id) || MOCK_NEWS_ITEMS.find((item) => item.id === id) || null;
+}
+
 /**
  * Fetch breaking news (uses NewsAPI)
  */

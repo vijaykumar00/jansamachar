@@ -1,6 +1,6 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import {
-  ActivityIndicator,
+  AccessibilityInfo,
   Alert,
   Animated,
   Linking,
@@ -13,8 +13,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
-import { AppButton, AppText, Badge, IconButton } from '@/components/ui/design-system';
-import { summarizeNews } from '@/services/geminiService';
+import { AppText, Badge, IconButton } from '@/components/ui/design-system';
 
 export type NewsCardVariant = 'article' | 'video' | 'local';
 
@@ -32,6 +31,9 @@ export interface NewsCardItem {
   hasDoc?: boolean;
   category?: string;
   aiSummary?: string;
+  duration?: string;
+  sourceType?: 'verified_publisher' | 'citizen_report';
+  channelLogoUrl?: string | null;
 }
 
 interface Props {
@@ -41,7 +43,7 @@ interface Props {
   variant?: NewsCardVariant;
 }
 
-const TRUST_CONFIG: Record<string, { label: string; tone: 'verified' | 'live' | 'warning' | 'fact' | 'muted' }> = {
+const TRUST_CONFIG: Record<string, { label: string; tone: 'verified' | 'live' | 'warning' | 'fact' | 'topic' }> = {
   verified: { label: 'Verified', tone: 'verified' },
   youtube: { label: 'Video source', tone: 'live' },
   newsdata: { label: 'NewsData', tone: 'fact' },
@@ -49,6 +51,8 @@ const TRUST_CONFIG: Record<string, { label: string; tone: 'verified' | 'live' | 
   official: { label: 'Official', tone: 'fact' },
   breaking: { label: 'Breaking', tone: 'live' },
 };
+
+const IMAGE_BLURHASH = 'L6PZfSi_.AyE_3t7t7R**0o#DgR4';
 
 function timeAgo(dateStr: string): string {
   const then = new Date(dateStr).getTime();
@@ -62,47 +66,62 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function NewsCard({ item, index, featured = false, variant }: Props) {
+function NewsCard({ item, index, variant }: Props) {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(18)).current;
-  const [aiSummary, setAiSummary] = useState(item.aiSummary || '');
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [showSummary, setShowSummary] = useState(Boolean(item.aiSummary && featured));
+  const translateY = useRef(new Animated.Value(8)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 220,
-        delay: Math.min(index, 4) * 45,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 220,
-        delay: Math.min(index, 4) * 45,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    let mounted = true;
+    let animation: Animated.CompositeAnimation | null = null;
+
+    AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (!mounted) return;
+      if (reduceMotion) {
+        opacity.setValue(1);
+        translateY.setValue(0);
+        return;
+      }
+
+      animation = Animated.parallel([
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 200,
+          delay: Math.min(index, 8) * 30,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 200,
+          delay: Math.min(index, 8) * 30,
+          useNativeDriver: true,
+        }),
+      ]);
+      animation.start();
+    });
+
+    return () => {
+      mounted = false;
+      animation?.stop();
+    };
   }, [index, opacity, translateY]);
 
   const trust = TRUST_CONFIG[item.trustLevel] || TRUST_CONFIG.citizen;
-  const computedVariant: NewsCardVariant = variant || (item.videoId || item.source === 'youtube' ? 'video' : item.category === 'state' ? 'local' : 'article');
+  const computedVariant: NewsCardVariant =
+    variant || (item.videoId || item.source === 'youtube' ? 'video' : item.category === 'state' ? 'local' : 'article');
   const isVideo = computedVariant === 'video' || item.source === 'youtube' || Boolean(item.videoId);
   const isLocal = computedVariant === 'local';
-  const sourceLine = useMemo(() => {
-    const bits = [item.channelName, timeAgo(item.publishedAt)];
-    if (item.category) bits.push(item.category.replace('_', ' '));
-    return bits.filter(Boolean).join(' • ');
-  }, [item.category, item.channelName, item.publishedAt]);
+  const sourceType = item.sourceType || (item.trustLevel === 'citizen' ? 'citizen_report' : 'verified_publisher');
+  const logoLetter = (item.channelName || 'J').trim().charAt(0).toUpperCase();
+  const summarySnippet = item.aiSummary?.replace(/\s+/g, ' ').replace(/^[-•]\s*/, '').trim() || '';
 
   const openStory = () => {
     if (item.videoId) {
       Linking.openURL(`https://www.youtube.com/watch?v=${item.videoId}`);
       return;
     }
+
     router.push({
       pathname: '/modal',
       params: {
@@ -115,24 +134,13 @@ function NewsCard({ item, index, featured = false, variant }: Props) {
         thumbnailUrl: item.thumbnailUrl || '',
         trustLevel: item.trustLevel,
         category: item.category || '',
-        aiSummary: aiSummary || item.aiSummary || '',
+        aiSummary: item.aiSummary || '',
       },
     });
   };
 
-  const handleAI = async () => {
-    setShowSummary((value) => !value);
-    if (aiSummary || loadingAI) return;
-
-    setLoadingAI(true);
-    try {
-      const summary = await summarizeNews(item.title, item.description || '', 'both');
-      setAiSummary(summary);
-    } catch (error) {
-      setAiSummary('AI summary is unavailable right now. Please verify details with the original source.');
-    } finally {
-      setLoadingAI(false);
-    }
+  const handleSave = () => {
+    Alert.alert('Saved', 'Story added to saved items.');
   };
 
   const handleShare = () => {
@@ -152,8 +160,6 @@ function NewsCard({ item, index, featured = false, variant }: Props) {
         onPress={openStory}
         style={({ pressed }) => [
           styles.card,
-          featured && styles.featuredCard,
-          isLocal && styles.localCard,
           {
             backgroundColor: C.card,
             borderColor: C.border,
@@ -161,80 +167,74 @@ function NewsCard({ item, index, featured = false, variant }: Props) {
           },
         ]}
       >
-        {item.thumbnailUrl ? (
-          <View style={styles.mediaWrap}>
+        <View style={styles.mediaWrap}>
+          {item.thumbnailUrl ? (
             <Image
               source={{ uri: item.thumbnailUrl }}
-              style={[styles.media, featured && styles.featuredMedia]}
+              placeholder={IMAGE_BLURHASH}
+              style={styles.media}
               contentFit="cover"
               transition={180}
               cachePolicy="memory-disk"
               accessibilityLabel=""
             />
-            <View style={[styles.mediaShade, { backgroundColor: C.overlay }]} />
-            <View style={styles.mediaBadges}>
-              {isVideo ? <Badge label="Video" tone="live" icon="▶" /> : null}
-              {item.hasDoc ? <Badge label="Source doc" tone="fact" icon="□" /> : null}
+          ) : (
+            <View style={[styles.media, styles.noImage, { backgroundColor: C.surfaceElevated }]}>
+              <AppText variant="badge" tone="muted">NO IMAGE</AppText>
             </View>
+          )}
+
+          <View style={[styles.mediaShade, { backgroundColor: C.overlay }]} />
+          <View style={styles.publisherOverlay}>
+            {item.channelLogoUrl ? (
+              <Image source={{ uri: item.channelLogoUrl }} style={styles.publisherLogo} contentFit="cover" />
+            ) : (
+              <View style={[styles.publisherLogo, { backgroundColor: C.bgCard }]}>
+                <AppText variant="badge">{logoLetter}</AppText>
+              </View>
+            )}
+            <AppText variant="caption" tone="inverse" numberOfLines={1} style={styles.publisherName}>
+              {item.channelName}
+            </AppText>
           </View>
-        ) : (
-          <View style={[styles.noImage, { backgroundColor: C.surfaceElevated }]}>
-            <AppText variant="badge" tone="muted">NO IMAGE</AppText>
-          </View>
-        )}
+
+          {isVideo ? (
+            <>
+              <View style={[styles.playOverlay, { backgroundColor: C.overlay }]}>
+                <View style={[styles.playTriangle, { borderLeftColor: C.textInverse }]} />
+              </View>
+              <View style={[styles.durationBadge, { backgroundColor: C.overlay }]}>
+                <AppText variant="badge" tone="inverse">{item.duration || 'LIVE'}</AppText>
+              </View>
+            </>
+          ) : null}
+        </View>
 
         <View style={styles.body}>
-          <View style={styles.badgeRow}>
+          <View style={styles.metaRow}>
             <Badge label={trust.label} tone={trust.tone} />
-            {isLocal ? <Badge label="Local signal" tone="local" /> : null}
-            {item.aiSummary ? <Badge label="AI summary" tone="ai" /> : null}
+            {isLocal ? (
+              <Badge
+                label={sourceType}
+                tone={sourceType === 'verified_publisher' ? 'verified' : 'topic'}
+              />
+            ) : null}
           </View>
 
-          <AppText variant={featured ? 'headline' : 'cardTitle'} numberOfLines={featured ? 3 : 2}>
+          <AppText variant="headline" numberOfLines={2} style={styles.headline}>
             {item.title}
           </AppText>
 
-          {item.description ? (
-            <AppText variant="body" tone="secondary" numberOfLines={featured ? 3 : 2}>
-              {item.description.replace(/<[^>]*>/g, '')}
-            </AppText>
-          ) : null}
-
-          <AppText variant="caption" tone="muted" numberOfLines={1}>
-            {sourceLine}
+          <AppText variant="caption" tone="secondary" numberOfLines={1} style={styles.summarySlot}>
+            {summarySnippet || ' '}
           </AppText>
 
-          {showSummary ? (
-            <View style={[styles.aiBox, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
-              <View style={styles.aiHeader}>
-                <Badge label="AI generated" tone="ai" />
-                {loadingAI ? <ActivityIndicator size="small" color={C.primary} /> : null}
-              </View>
-              <AppText variant="body" tone="secondary">
-                {loadingAI ? 'Preparing a short summary...' : aiSummary}
-              </AppText>
-              <AppText variant="caption" tone="muted">
-                AI summaries can make mistakes. Check the original source for critical details.
-              </AppText>
-            </View>
-          ) : null}
-
-          <View style={styles.actions}>
-            <AppButton
-              label={showSummary ? 'Hide AI' : 'AI summary'}
-              variant="secondary"
-              icon="AI"
-              onPress={handleAI}
-              accessibilityLabel="Toggle AI summary"
-              style={styles.actionButton}
-            />
-            <IconButton label="Share story" icon="↗" onPress={handleShare} />
-            <AppButton
-              label={isVideo ? 'Watch' : 'Read'}
-              onPress={openStory}
-              accessibilityLabel={isVideo ? 'Watch video story' : 'Read full story'}
-              style={styles.readButton}
-            />
+          <View style={styles.footerRow}>
+            <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.footerTime}>
+              {timeAgo(item.publishedAt)}
+            </AppText>
+            <IconButton label="Save story" icon="S" onPress={handleSave} style={styles.footerIcon} />
+            <IconButton label="Share story" icon=">" onPress={handleShare} style={styles.footerIcon} />
           </View>
         </View>
       </Pressable>
@@ -247,38 +247,82 @@ export default memo(NewsCard);
 const styles = StyleSheet.create({
   wrapper: { marginBottom: spacing.md, marginHorizontal: spacing.lg },
   card: {
-    borderRadius: radius.lg,
+    borderRadius: radius.card,
     borderWidth: 1,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: Colors.light.ink,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 3,
   },
-  featuredCard: { borderRadius: radius.xl },
-  localCard: { borderLeftWidth: 4 },
-  mediaWrap: { position: 'relative', backgroundColor: '#111827' },
+  mediaWrap: { position: 'relative', backgroundColor: Colors.dark.bgPage },
   media: { width: '100%', aspectRatio: 16 / 9 },
-  featuredMedia: { aspectRatio: 1.75 },
-  mediaShade: { ...StyleSheet.absoluteFill, opacity: 0.08 },
-  mediaBadges: {
+  mediaShade: { ...StyleSheet.absoluteFill, opacity: 0.16 },
+  noImage: { alignItems: 'center', justifyContent: 'center' },
+  publisherOverlay: {
     position: 'absolute',
-    left: spacing.md,
-    top: spacing.md,
+    top: spacing.sm,
+    left: spacing.sm,
+    right: spacing.sm,
+    minHeight: 34,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
   },
-  noImage: {
-    aspectRatio: 16 / 6,
+  publisherLogo: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  publisherName: { flex: 1, textShadowColor: Colors.dark.bgPage, textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  playOverlay: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '50%',
+    width: 52,
+    height: 52,
+    marginTop: -26,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  body: { padding: spacing.md, gap: spacing.sm },
-  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  aiBox: { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm },
-  aiHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
-  actionButton: { flex: 1, minHeight: 42, paddingHorizontal: spacing.sm },
-  readButton: { minWidth: 82, minHeight: 42, paddingHorizontal: spacing.md },
+  playTriangle: {
+    width: 0,
+    height: 0,
+    marginLeft: 4,
+    borderTopWidth: 11,
+    borderBottomWidth: 11,
+    borderLeftWidth: 17,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+  },
+  durationBadge: {
+    position: 'absolute',
+    right: spacing.sm,
+    bottom: spacing.sm,
+    borderRadius: radius.control,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  body: {
+    height: 184,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  metaRow: { height: 26, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, overflow: 'hidden' },
+  headline: { minHeight: 48 },
+  summarySlot: { height: 18 },
+  footerRow: { height: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 'auto' },
+  footerTime: { flex: 1 },
+  footerIcon: {
+    width: 48,
+    height: 48,
+    minWidth: 48,
+    minHeight: 48,
+    borderRadius: radius.control,
+  },
 });
