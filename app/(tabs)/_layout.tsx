@@ -1,80 +1,90 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme, View, Text, StyleSheet, Platform } from 'react-native';
+import { Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { Colors } from '@/constants/colors';
+import { radius, spacing } from '@/constants/theme';
 
-function TabIcon({ focused, icon, label, isDark }: { focused: boolean; icon: string; label: string; isDark: boolean }) {
-  const C = isDark ? Colors.dark : Colors.light;
+function TabIcon({
+  focused,
+  icon,
+  label,
+}: {
+  focused: boolean;
+  icon: string;
+  label: string;
+}) {
+  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
-    <View style={[styles.tabItem, focused && { borderTopWidth: 2, borderTopColor: C.primary }]}>
-      <Text style={[styles.tabEmoji, { opacity: focused ? 1 : 0.5 }]}>{icon}</Text>
-      <Text style={[styles.tabLabel, { color: focused ? C.primary : C.tabIconDefault }]}>{label}</Text>
+    <View style={[styles.tabItem, focused && { backgroundColor: C.primary + '18' }]}>
+      <Text style={[styles.tabIcon, { color: focused ? C.primary : C.tabIconDefault }]}>{icon}</Text>
+      <Text style={[styles.tabLabel, { color: focused ? C.primary : C.tabIconDefault }]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarShowLabel: false,
         tabBarStyle: {
           backgroundColor: C.tabBar,
           borderTopColor: C.tabBarBorder,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 85 : 65,
-          paddingBottom: Platform.OS === 'ios' ? 25 : 8,
-          paddingTop: 0,
-          elevation: 10,
+          height: Platform.OS === 'ios' ? 88 : 72,
+          paddingTop: spacing.sm,
+          paddingBottom: Platform.OS === 'ios' ? 22 : spacing.sm,
+          elevation: 12,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: isDark ? 0.5 : 0.08,
-          shadowRadius: 8,
+          shadowOpacity: isDark ? 0.35 : 0.08,
+          shadowRadius: 10,
         },
-        tabBarShowLabel: false,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon="🗞️" label="समाचार" isDark={isDark} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="live"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon="🔴" label="लाइव" isDark={isDark} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="documents"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon="📂" label="दस्तावेज़" isDark={isDark} />
-          ),
+          title: 'Home',
+          tabBarAccessibilityLabel: 'Home tab',
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="⌂" label="Home" />,
         }}
       />
       <Tabs.Screen
         name="search"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon="🔍" label="खोजें" isDark={isDark} />
-          ),
+          title: 'Explore',
+          tabBarAccessibilityLabel: 'Explore tab',
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="⌕" label="Explore" />,
+        }}
+      />
+      <Tabs.Screen
+        name="documents"
+        options={{
+          title: 'Local',
+          tabBarAccessibilityLabel: 'Local and civic documents tab',
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="⌖" label="Local" />,
+        }}
+      />
+      <Tabs.Screen
+        name="live"
+        options={{
+          title: 'Video',
+          tabBarAccessibilityLabel: 'Video news tab',
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="▶" label="Video" />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon focused={focused} icon="👤" label="प्रोफाइल" isDark={isDark} />
-          ),
+          title: 'Profile',
+          tabBarAccessibilityLabel: 'Profile tab',
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="○" label="Profile" />,
         }}
       />
     </Tabs>
@@ -85,17 +95,12 @@ const styles = StyleSheet.create({
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 8,
-    paddingHorizontal: 4,
-    minWidth: 55,
+    minWidth: 58,
+    minHeight: 48,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.xs,
+    gap: 2,
   },
-  tabEmoji: {
-    fontSize: 22,
-    marginBottom: 2,
-  },
-  tabLabel: {
-    fontSize: 9,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
+  tabIcon: { fontSize: 20, fontWeight: '900', lineHeight: 22 },
+  tabLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0 },
 });

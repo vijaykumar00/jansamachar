@@ -1,14 +1,12 @@
-// JanSamachar — Personalization Engine
-// Generates smart search queries based on user profile (profession + location + interests)
-
 import type { UserProfile } from '../store/userProfileStore';
-import { PROFESSIONS, INTERESTS } from '../constants/professions';
+import { INTERESTS, PROFESSIONS } from '../constants/professions';
+import { searchYouTubeNews, ytSearchToNewsItem } from './youtubeSearchService';
 import {
-  searchYouTubeNews, ytSearchToNewsItem,
-} from './youtubeSearchService';
-import {
-  fetchDistrictNews, fetchStateNews, fetchNationalNews,
-  fetchProfessionNews, toNewsItem,
+  fetchDistrictNews,
+  fetchNationalNews,
+  fetchProfessionNews,
+  fetchStateNews,
+  toNewsItem,
 } from './newsDataService';
 
 export interface FeedSection {
@@ -20,17 +18,10 @@ export interface FeedSection {
   geoLevel: 'district' | 'state' | 'national' | 'profession' | 'interest';
 }
 
-/**
- * Build the personalized news feed for a user.
- * Returns sections: district → state → national → profession-specific
- */
 export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedSection[]> {
   const lang = profile.language === 'both' ? 'hi,en' : profile.language;
-  const profession = PROFESSIONS.find(p => p.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
+  const profession = PROFESSIONS.find((p) => p.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
 
-  const sections: FeedSection[] = [];
-
-  // Fetch all sections in parallel
   const [
     districtNewsData,
     districtYT,
@@ -41,23 +32,15 @@ export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedS
     professionYT,
     interestResults,
   ] = await Promise.allSettled([
-    // 1. Hyperlocal: district NewsData.io
     fetchDistrictNews(profile.districtName, profile.stateName, lang),
-    // 2. Hyperlocal: district YouTube search
-    searchYouTubeNews(`${profile.districtName} ${profile.stateName} news आज`, 8),
-    // 3. State: NewsData.io
+    searchYouTubeNews(`${profile.districtName} ${profile.stateName} news today`, 8),
     fetchStateNews(profile.stateName, lang),
-    // 4. State: YouTube
     searchYouTubeNews(`${profile.stateName} news latest`, 6),
-    // 5. National: NewsData.io top
     fetchNationalNews(lang),
-    // 6. Profession: NewsData.io
     fetchProfessionNews(profession.keywords, lang),
-    // 7. Profession: YouTube
-    searchYouTubeNews(profession.keywords[0] + ' news 2025', 8),
-    // 8. First interest: YouTube
+    searchYouTubeNews(`${profession.keywords[0]} latest news`, 8),
     profile.interests.length > 0
-      ? searchYouTubeNews((INTERESTS.find(i => i.id === profile.interests[0])?.keywords[0] || 'India news') + ' today', 6)
+      ? searchYouTubeNews(`${INTERESTS.find((i) => i.id === profile.interests[0])?.keywords[0] || 'India news'} today`, 6)
       : Promise.resolve([]),
   ]);
 
@@ -71,8 +54,7 @@ export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedS
     ...(stateYT.status === 'fulfilled' ? stateYT.value.map(ytSearchToNewsItem) : []),
   ];
 
-  const nationalItems = nationalNewsData.status === 'fulfilled'
-    ? nationalNewsData.value.map(toNewsItem) : [];
+  const nationalItems = nationalNewsData.status === 'fulfilled' ? nationalNewsData.value.map(toNewsItem) : [];
 
   const professionItems = [
     ...(professionNewsData.status === 'fulfilled' ? professionNewsData.value.map(toNewsItem) : []),
@@ -80,17 +62,21 @@ export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedS
   ];
 
   const interestItems = interestResults.status === 'fulfilled'
-    ? (interestResults.value as any[]).map(ytSearchToNewsItem) : [];
+    ? (interestResults.value as any[]).map(ytSearchToNewsItem)
+    : [];
 
   const interestLabel = profile.interests[0]
-    ? INTERESTS.find(i => i.id === profile.interests[0]) : null;
+    ? INTERESTS.find((i) => i.id === profile.interests[0])
+    : null;
+
+  const sections: FeedSection[] = [];
 
   if (districtItems.length > 0) {
     sections.push({
       id: 'district',
       title: `${profile.districtName} News`,
       titleHi: `${profile.districtName} की खबरें`,
-      emoji: '📍',
+      emoji: '⌖',
       items: districtItems.slice(0, 10),
       geoLevel: 'district',
     });
@@ -101,7 +87,7 @@ export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedS
       id: 'state',
       title: `${profile.stateName}`,
       titleHi: `${profile.stateName} समाचार`,
-      emoji: '🗺️',
+      emoji: '◇',
       items: stateItems.slice(0, 10),
       geoLevel: 'state',
     });
@@ -111,7 +97,7 @@ export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedS
     id: 'national',
     title: 'National',
     titleHi: 'राष्ट्रीय समाचार',
-    emoji: '🇮🇳',
+    emoji: 'IN',
     items: nationalItems.slice(0, 10),
     geoLevel: 'national',
   });
@@ -120,7 +106,7 @@ export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedS
     sections.push({
       id: 'profession',
       title: `For ${profession.label}`,
-      titleHi: `${profession.labelHi} की खबरें`,
+      titleHi: `${profession.labelHi} के लिए`,
       emoji: profession.emoji,
       items: professionItems.slice(0, 10),
       geoLevel: 'profession',
@@ -141,11 +127,10 @@ export async function buildPersonalizedFeed(profile: UserProfile): Promise<FeedS
   return sections;
 }
 
-/** Get a time-based greeting in Hindi */
 export function getGreeting(): string {
   const hour = new Date().getHours();
-  if (hour < 12) return 'शुभ प्रभात 🌅';
-  if (hour < 17) return 'नमस्ते 🙏';
-  if (hour < 20) return 'शुभ संध्या 🌆';
-  return 'शुभ रात्रि 🌙';
+  if (hour < 12) return 'शुभ प्रभात';
+  if (hour < 17) return 'नमस्ते';
+  if (hour < 20) return 'शुभ संध्या';
+  return 'शुभ रात्रि';
 }

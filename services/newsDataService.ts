@@ -9,6 +9,7 @@ const BASE = 'https://newsdata.io/api/1/latest';
 
 export interface NewsDataArticle {
   id: string;
+  article_id?: string;
   title: string;
   description: string | null;
   link: string;
@@ -19,6 +20,18 @@ export interface NewsDataArticle {
   language: string;
   category: string[];
   country: string[];
+}
+
+function stableArticleId(article: NewsDataArticle): string {
+  const rawId = article.article_id || article.id;
+  if (rawId) return `newsdata_${rawId}`;
+
+  const uniqueSource = `${article.source_id}|${article.pubDate}|${article.link}|${article.title}`;
+  let hash = 0;
+  for (let i = 0; i < uniqueSource.length; i += 1) {
+    hash = (hash * 31 + uniqueSource.charCodeAt(i)) >>> 0;
+  }
+  return `newsdata_${article.source_id || 'source'}_${article.pubDate || 'date'}_${hash.toString(36)}`;
 }
 
 interface NewsDataResponse {
@@ -111,7 +124,7 @@ export async function fetchNationalNews(language = 'hi,en'): Promise<NewsDataArt
 /** Convert NewsData article to our app's unified NewsItem format */
 export function toNewsItem(article: NewsDataArticle) {
   return {
-    id: article.source_id + '_' + article.pubDate,
+    id: stableArticleId(article),
     title: article.title,
     description: article.description || '',
     thumbnailUrl: article.image_url || null,

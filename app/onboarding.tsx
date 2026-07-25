@@ -1,225 +1,34 @@
-// JanSamachar — Onboarding Wizard (v2 with live geo data)
-// Step 1: Profession | Step 2: Location (live API) | Step 3: Interests | Step 4: Language
-
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Dimensions, StatusBar, SafeAreaView, Animated, TextInput,
-  ActivityIndicator,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, TextInput, View, useColorScheme } from 'react-native';
 import { router } from 'expo-router';
-import { useProfileStore } from '../store/userProfileStore';
-import { PROFESSIONS, INTERESTS, type ProfessionId, type Language } from '../constants/professions';
-import { getIndiaGeoData, getDistrictsForState, type GeoState, type GeoDistrict } from '../services/geoService';
+import { Colors } from '@/constants/colors';
+import { INTERESTS, PROFESSIONS, type Language, type ProfessionId } from '@/constants/professions';
+import { spacing } from '@/constants/theme';
+import { getDistrictsForState, getIndiaGeoData, type GeoDistrict, type GeoState } from '@/services/geoService';
+import { useProfileStore } from '@/store/userProfileStore';
+import {
+  AppButton,
+  AppText,
+  Chip,
+  JanSamacharLogo,
+  Screen,
+  SectionHeader,
+} from '@/components/ui/design-system';
 
-const { width } = Dimensions.get('window');
+const STEPS = ['Welcome', 'Profession', 'Location', 'Interests', 'Language'];
 
-// ─── Step 1: Profession ──────────────────────────────────────────────────────
-function StepProfession({ selected, onSelect }: { selected: ProfessionId; onSelect: (p: ProfessionId) => void }) {
+function Progress({ step }: { step: number }) {
+  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
-    <View style={styles.step}>
-      <Text style={styles.stepTitle}>आप कौन हैं?</Text>
-      <Text style={styles.stepSubtitle}>Who are you? We'll personalize your news.</Text>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.profGrid}>
-        {PROFESSIONS.map(p => (
-          <TouchableOpacity
-            key={p.id}
-            style={[
-              styles.profCard,
-              selected === p.id && styles.profCardSelected,
-            ]}
-            onPress={() => onSelect(p.id as ProfessionId)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.profEmoji}>{p.emoji}</Text>
-            <Text style={styles.profLabelHi}>{p.labelHi}</Text>
-            <Text style={styles.profLabel}>{p.label}</Text>
-            {selected === p.id && <View style={styles.profCheck}><Text style={{ fontSize: 10 }}>✓</Text></View>}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+    <View style={[styles.progressTrack, { backgroundColor: C.border }]}>
+      <View style={[styles.progressFill, { backgroundColor: C.primary, width: `${((step + 1) / STEPS.length) * 100}%` }]} />
     </View>
   );
 }
 
-// ─── Step 2: Location (Live from CDN API) ────────────────────────────────────
-function StepLocation({
-  stateId, districtId,
-  onSelectState, onSelectDistrict,
-}: {
-  stateId: string; districtId: string;
-  onSelectState: (id: string, name: string) => void;
-  onSelectDistrict: (id: string, name: string) => void;
-}) {
-  const [states, setStates] = useState<GeoState[]>([]);
-  const [districts, setDistricts] = useState<GeoDistrict[]>([]);
-  const [loadingStates, setLoadingStates] = useState(true);
-  const [loadingDistricts, setLoadingDistricts] = useState(false);
-  const [stateSearch, setStateSearch] = useState('');
-
-  // Load all states on mount (from cache or CDN)
-  useEffect(() => {
-    getIndiaGeoData().then(data => {
-      setStates(data);
-      setLoadingStates(false);
-    });
-  }, []);
-
-  // Load districts when state changes
-  useEffect(() => {
-    if (!stateId) { setDistricts([]); return; }
-    setLoadingDistricts(true);
-    getDistrictsForState(stateId).then(d => {
-      setDistricts(d);
-      setLoadingDistricts(false);
-    });
-  }, [stateId]);
-
-  const filteredStates = stateSearch
-    ? states.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase()))
-    : states;
-
-  return (
-    <View style={styles.step}>
-      <Text style={styles.stepTitle}>आप कहाँ हैं?</Text>
-      <Text style={styles.stepSubtitle}>Select your state and district for hyperlocal news</Text>
-
-      {/* State Search */}
-      <Text style={styles.locationLabel}>🗺️ State / राज्य</Text>
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search state..."
-        placeholderTextColor="rgba(255,255,255,0.3)"
-        value={stateSearch}
-        onChangeText={setStateSearch}
-      />
-
-      {loadingStates ? (
-        <View style={styles.geoLoading}>
-          <ActivityIndicator color="#FF9933" />
-          <Text style={styles.geoLoadingText}>Loading states from Census data...</Text>
-        </View>
-      ) : (
-        <ScrollView style={styles.stateList} showsVerticalScrollIndicator={false}>
-          <View style={styles.stateGrid}>
-            {filteredStates.map(s => (
-              <TouchableOpacity
-                key={s.id}
-                style={[
-                  styles.stateChip,
-                  stateId === s.id && styles.stateChipSelected,
-                ]}
-                onPress={() => { onSelectState(s.id, s.name); onSelectDistrict('', ''); }}
-              >
-                <Text style={[styles.stateChipText, stateId === s.id && { color: '#fff', fontWeight: '700' }]}>
-                  {s.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      )}
-
-      {/* Districts */}
-      {stateId !== '' && (
-        <>
-          <Text style={[styles.locationLabel, { marginTop: 16 }]}>🏘️ District / जिला</Text>
-          {loadingDistricts ? (
-            <View style={styles.geoLoading}>
-              <ActivityIndicator color="#FF9933" size="small" />
-              <Text style={styles.geoLoadingText}>Loading all districts...</Text>
-            </View>
-          ) : (
-            <ScrollView style={styles.districtList} showsVerticalScrollIndicator={false}>
-              <View style={styles.districtGrid}>
-                {districts.map(d => (
-                  <TouchableOpacity
-                    key={d.id}
-                    style={[
-                      styles.districtChip,
-                      districtId === d.id && styles.districtChipSelected,
-                    ]}
-                    onPress={() => onSelectDistrict(d.id, d.name)}
-                  >
-                    <Text style={[styles.districtChipText, districtId === d.id && { color: '#fff' }]}>
-                      {d.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          )}
-        </>
-      )}
-    </View>
-  );
-}
-
-// ─── Step 3: Interests ───────────────────────────────────────────────────────
-function StepInterests({ selected, onToggle }: { selected: string[]; onToggle: (id: string) => void }) {
-  return (
-    <View style={styles.step}>
-      <Text style={styles.stepTitle}>क्या पसंद है?</Text>
-      <Text style={styles.stepSubtitle}>Pick topics you care about</Text>
-      <Text style={styles.interestHint}>✅ Select 3 or more for best results</Text>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.interestGrid}>
-        {INTERESTS.map(interest => {
-          const isSel = selected.includes(interest.id);
-          return (
-            <TouchableOpacity
-              key={interest.id}
-              style={[styles.interestChip, isSel && styles.interestChipSelected]}
-              onPress={() => onToggle(interest.id)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.interestEmoji}>{interest.emoji}</Text>
-              <View>
-                <Text style={[styles.interestLabel, isSel && { color: '#FF9933' }]}>{interest.labelHi}</Text>
-                <Text style={styles.interestLabelEn}>{interest.label}</Text>
-              </View>
-              {isSel && <Text style={styles.interestCheck}>✓</Text>}
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
-
-// ─── Step 4: Language ────────────────────────────────────────────────────────
-function StepLanguage({ selected, onSelect }: { selected: Language; onSelect: (l: Language) => void }) {
-  const options: { id: Language; flag: string; label: string; sub: string }[] = [
-    { id: 'hi', flag: '🇮🇳', label: 'हिंदी', sub: 'सभी खबरें हिंदी में' },
-    { id: 'en', flag: '🇬🇧', label: 'English', sub: 'All news in English' },
-    { id: 'both', flag: '🌐', label: 'Hindi + English', sub: 'दोनों भाषाओं में खबरें' },
-  ];
-  return (
-    <View style={styles.step}>
-      <Text style={styles.stepTitle}>भाषा चुनें</Text>
-      <Text style={styles.stepSubtitle}>Choose your preferred language</Text>
-      <View style={styles.langOptions}>
-        {options.map(opt => (
-          <TouchableOpacity
-            key={opt.id}
-            style={[styles.langCard, selected === opt.id && styles.langCardSelected]}
-            onPress={() => onSelect(opt.id)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.langFlag}>{opt.flag}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.langLabel}>{opt.label}</Text>
-              <Text style={styles.langSub}>{opt.sub}</Text>
-            </View>
-            {selected === opt.id && <Text style={{ fontSize: 20 }}>✅</Text>}
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── Main Onboarding Screen ──────────────────────────────────────────────────
 export default function OnboardingScreen() {
+  const isDark = useColorScheme() === 'dark';
+  const C = isDark ? Colors.dark : Colors.light;
   const { profile, setProfile } = useProfileStore();
   const [step, setStep] = useState(0);
   const [profession, setProfession] = useState<ProfessionId>(profile.profession);
@@ -229,202 +38,222 @@ export default function OnboardingScreen() {
   const [districtName, setDistrictName] = useState(profile.districtName);
   const [interests, setInterests] = useState<string[]>(profile.interests);
   const [language, setLanguage] = useState<Language>(profile.language);
+  const [states, setStates] = useState<GeoState[]>([]);
+  const [districts, setDistricts] = useState<GeoDistrict[]>([]);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [stateSearch, setStateSearch] = useState('');
 
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    setGeoLoading(true);
+    getIndiaGeoData()
+      .then(setStates)
+      .finally(() => setGeoLoading(false));
+  }, []);
 
-  const TOTAL_STEPS = 4;
-  const STEP_LABELS = ['Who are you?', 'Where are you?', 'Interests', 'Language'];
+  useEffect(() => {
+    if (!stateId) return;
+    setGeoLoading(true);
+    getDistrictsForState(stateId)
+      .then(setDistricts)
+      .finally(() => setGeoLoading(false));
+  }, [stateId]);
 
-  const animateTransition = (toStep: number) => {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
-      setStep(toStep);
-      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+  const filteredStates = useMemo(() => {
+    const needle = stateSearch.trim().toLowerCase();
+    if (!needle) return states;
+    return states.filter((item) => item.name.toLowerCase().includes(needle));
+  }, [stateSearch, states]);
+
+  const canContinue = step !== 2 || Boolean(stateId && districtId);
+
+  const finish = () => {
+    setProfile({
+      onboardingDone: true,
+      profession,
+      stateId,
+      stateName,
+      districtId,
+      districtName,
+      interests,
+      language,
     });
+    router.replace('/(tabs)');
   };
 
-  const canProceed = () => {
-    if (step === 1 && (!stateId || !districtId)) return false;
-    if (step === 2 && interests.length < 1) return false;
-    return true;
+  const next = () => {
+    if (step === STEPS.length - 1) finish();
+    else setStep((value) => value + 1);
   };
 
-  const handleNext = () => {
-    if (step < TOTAL_STEPS - 1) {
-      animateTransition(step + 1);
-    } else {
-      setProfile({
-        onboardingDone: true,
-        profession,
-        stateId,
-        stateName,
-        districtId,
-        districtName,
-        interests,
-        language,
-      });
-      router.replace('/(tabs)');
-    }
+  const toggleInterest = (id: string) => {
+    setInterests((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
-
-  const toggleInterest = (id: string) =>
-    setInterests(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#060B18" />
-
-      {/* Progress bar */}
-      <View style={styles.progressContainer}>
-        <View style={[styles.progressBar, { width: `${((step + 1) / TOTAL_STEPS) * 100}%` }]} />
+    <Screen>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
+      <Progress step={step} />
+      <View style={styles.topBar}>
+        <AppText variant="caption" tone="muted">Step {step + 1} of {STEPS.length}</AppText>
+        <AppButton label="Skip" variant="ghost" onPress={finish} style={styles.skipButton} />
       </View>
 
-      {/* Step info */}
-      <View style={styles.stepInfo}>
-        <Text style={styles.stepCount}>Step {step + 1} of {TOTAL_STEPS}</Text>
-        <Text style={styles.appBrand}>🇮🇳 JanSamachar</Text>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {step === 0 ? (
+          <View style={[styles.hero, { backgroundColor: C.secondary }]}>
+            <JanSamacharLogo wordmark={false} />
+            <AppText variant="screenTitle" tone="inverse">JanSamachar</AppText>
+            <AppText variant="display" tone="inverse">खबरें जो आपके लिए मायने रखती हैं</AppText>
+            <AppText variant="body" tone="inverse" style={{ opacity: 0.78 }}>
+              JanSamachar personalizes trusted Indian news by location, language, profession, and interests.
+            </AppText>
+            <View style={styles.heroBullets}>
+              {['Verified sources', 'Local-first updates', 'AI summaries with disclaimers'].map((item) => (
+                <View key={item} style={[styles.heroBullet, { backgroundColor: C.primary }]}>
+                  <AppText variant="badge" tone="inverse">{item}</AppText>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {step === 1 ? (
+          <>
+            <SectionHeader title="Choose your profile" eyebrow="We use this to tune recommendations" />
+            <View style={styles.grid}>
+              {PROFESSIONS.map((item) => (
+                <Chip
+                  key={item.id}
+                  label={`${item.emoji} ${item.label}`}
+                  selected={profession === item.id}
+                  onPress={() => setProfession(item.id)}
+                  style={styles.wideChip}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        {step === 2 ? (
+          <>
+            <SectionHeader title="Set your location" eyebrow="Manual selection keeps permissions optional" />
+            <View style={[styles.inputShell, { backgroundColor: C.surface, borderColor: C.border }]}>
+              <TextInput
+                value={stateSearch}
+                onChangeText={setStateSearch}
+                placeholder="Search state..."
+                placeholderTextColor={C.textMuted}
+                style={[styles.input, { color: C.text }]}
+              />
+            </View>
+            {geoLoading && states.length === 0 ? <ActivityIndicator color={C.primary} /> : null}
+            <View style={styles.grid}>
+              {filteredStates.slice(0, 24).map((item) => (
+                <Chip
+                  key={item.id}
+                  label={item.name}
+                  selected={stateId === item.id}
+                  onPress={() => {
+                    setStateId(item.id);
+                    setStateName(item.name);
+                    setDistrictId('');
+                    setDistrictName('');
+                  }}
+                />
+              ))}
+            </View>
+            {stateId ? (
+              <>
+                <SectionHeader title="District" />
+                <View style={styles.grid}>
+                  {districts.slice(0, 40).map((item) => (
+                    <Chip
+                      key={item.id}
+                      label={item.name}
+                      selected={districtId === item.id}
+                      onPress={() => {
+                        setDistrictId(item.id);
+                        setDistrictName(item.name);
+                      }}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : null}
+          </>
+        ) : null}
+
+        {step === 3 ? (
+          <>
+            <SectionHeader title="Pick interests" eyebrow="Choose at least one; three or more works best" />
+            <View style={styles.grid}>
+              {INTERESTS.map((item) => (
+                <Chip
+                  key={item.id}
+                  icon={item.emoji}
+                  label={item.label}
+                  selected={interests.includes(item.id)}
+                  onPress={() => toggleInterest(item.id)}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        {step === 4 ? (
+          <>
+            <SectionHeader title="Preferred language" eyebrow="You can change this later" />
+            <View style={styles.languageStack}>
+              {[
+                { id: 'hi' as Language, title: 'Hindi', subtitle: 'सभी खबरें हिंदी में' },
+                { id: 'en' as Language, title: 'English', subtitle: 'All news in English' },
+                { id: 'both' as Language, title: 'Hindi + English', subtitle: 'Bilingual feed and AI summaries' },
+              ].map((item) => (
+                <Chip
+                  key={item.id}
+                  label={`${item.title} • ${item.subtitle}`}
+                  selected={language === item.id}
+                  onPress={() => setLanguage(item.id)}
+                  style={styles.languageChip}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+      </ScrollView>
+
+      <View style={[styles.navBar, { borderTopColor: C.border, backgroundColor: C.background }]}>
+        <AppButton
+          label={step === 0 ? 'Not now' : 'Back'}
+          variant="secondary"
+          onPress={() => step === 0 ? finish() : setStep((value) => value - 1)}
+          style={{ flex: 1 }}
+        />
+        <AppButton
+          label={step === STEPS.length - 1 ? 'Start reading' : 'Continue'}
+          onPress={next}
+          disabled={!canContinue}
+          style={[{ flex: 2 }, !canContinue && { opacity: 0.45 }]}
+        />
       </View>
-
-      {/* Animated Content */}
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        {step === 0 && <StepProfession selected={profession} onSelect={setProfession} />}
-        {step === 1 && (
-          <StepLocation
-            stateId={stateId}
-            districtId={districtId}
-            onSelectState={(id, name) => { setStateId(id); setStateName(name); }}
-            onSelectDistrict={(id, name) => { setDistrictId(id); setDistrictName(name); }}
-          />
-        )}
-        {step === 2 && <StepInterests selected={interests} onToggle={toggleInterest} />}
-        {step === 3 && <StepLanguage selected={language} onSelect={setLanguage} />}
-      </Animated.View>
-
-      {/* Navigation */}
-      <View style={styles.navRow}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => {
-            if (step > 0) animateTransition(step - 1);
-            else { setProfile({ onboardingDone: true }); router.replace('/(tabs)'); }
-          }}
-        >
-          <Text style={styles.backBtnText}>{step === 0 ? 'Skip' : '← Back'}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.nextBtn, !canProceed() && styles.nextBtnDisabled]}
-          onPress={handleNext}
-          disabled={!canProceed()}
-        >
-          <Text style={styles.nextBtnText}>
-            {step === TOTAL_STEPS - 1 ? '🚀 Start Reading' : 'Next →'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#060B18' },
-
-  // Progress
-  progressContainer: { height: 3, backgroundColor: 'rgba(255,255,255,0.08)', width: '100%' },
-  progressBar: { height: 3, backgroundColor: '#FF9933', borderRadius: 2 },
-
-  // Step info
-  stepInfo: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4,
-  },
-  stepCount: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
-  appBrand: { color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: '700' },
-
-  content: { flex: 1 },
-  step: { flex: 1, paddingHorizontal: 20 },
-
-  // Headings
-  stepTitle: { color: '#fff', fontSize: 27, fontWeight: '900', marginTop: 10, marginBottom: 4 },
-  stepSubtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginBottom: 20, lineHeight: 20 },
-
-  // Profession step
-  profGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 16 },
-  profCard: {
-    width: (width - 60) / 3, borderRadius: 16, borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: 12, alignItems: 'center', gap: 5, position: 'relative',
-  },
-  profCardSelected: { backgroundColor: 'rgba(255,153,51,0.12)', borderColor: '#FF9933' },
-  profEmoji: { fontSize: 30 },
-  profLabelHi: { color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  profLabel: { color: 'rgba(255,255,255,0.35)', fontSize: 10, textAlign: 'center' },
-  profCheck: {
-    position: 'absolute', top: 6, right: 8,
-    backgroundColor: '#FF9933', borderRadius: 8,
-    width: 16, height: 16, alignItems: 'center', justifyContent: 'center',
-  },
-
-  // Location step
-  locationLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '700', marginBottom: 8 },
-  searchInput: {
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)', color: '#fff', paddingHorizontal: 14,
-    paddingVertical: 10, fontSize: 14, marginBottom: 10,
-  },
-  geoLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16 },
-  geoLoadingText: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
-  stateList: { maxHeight: 180 },
-  stateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  stateChip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  stateChipSelected: { backgroundColor: '#FF9933', borderColor: '#FF9933' },
-  stateChipText: { color: 'rgba(255,255,255,0.75)', fontSize: 13 },
-  districtList: { maxHeight: 150 },
-  districtGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  districtChip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  districtChipSelected: { backgroundColor: '#000080', borderColor: '#4444FF' },
-  districtChipText: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
-
-  // Interests step
-  interestHint: { color: '#FF9933', fontSize: 12, marginTop: -12, marginBottom: 14 },
-  interestGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 16 },
-  interestChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  interestChipSelected: { backgroundColor: 'rgba(255,153,51,0.1)', borderColor: '#FF9933' },
-  interestEmoji: { fontSize: 18 },
-  interestLabel: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  interestLabelEn: { color: 'rgba(255,255,255,0.35)', fontSize: 10 },
-  interestCheck: { color: '#FF9933', fontWeight: '900', fontSize: 14, marginLeft: 2 },
-
-  // Language step
-  langOptions: { gap: 12, marginTop: 8 },
-  langCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18, borderRadius: 18,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  langCardSelected: { backgroundColor: 'rgba(255,153,51,0.1)', borderColor: '#FF9933' },
-  langFlag: { fontSize: 30 },
-  langLabel: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  langSub: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
-
-  // Navigation
-  navRow: { flexDirection: 'row', padding: 20, gap: 12 },
-  backBtn: {
-    flex: 1, paddingVertical: 16, borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center',
-  },
-  backBtnText: { color: 'rgba(255,255,255,0.55)', fontSize: 15, fontWeight: '600' },
-  nextBtn: { flex: 2, paddingVertical: 16, borderRadius: 16, alignItems: 'center', backgroundColor: '#FF9933' },
-  nextBtnDisabled: { backgroundColor: 'rgba(255,153,51,0.25)' },
-  nextBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  progressTrack: { height: 4 },
+  progressFill: { height: 4, borderRadius: 999 },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.lg },
+  skipButton: { minHeight: 36, paddingVertical: spacing.xs, paddingHorizontal: spacing.md },
+  content: { padding: spacing.lg, paddingBottom: 24 },
+  hero: { borderRadius: 24, padding: spacing.xl, gap: spacing.lg },
+  heroBullets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  heroBullet: { borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  wideChip: { minWidth: '45%' },
+  inputShell: { borderWidth: 1, borderRadius: 14, paddingHorizontal: spacing.md, marginBottom: spacing.md },
+  input: { minHeight: 48, fontSize: 15 },
+  languageStack: { gap: spacing.sm },
+  languageChip: { alignSelf: 'stretch', justifyContent: 'center' },
+  navBar: { borderTopWidth: 1, padding: spacing.lg, flexDirection: 'row', gap: spacing.md },
 });

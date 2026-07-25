@@ -1,233 +1,166 @@
-import React, { useState } from 'react';
-import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity,
-  useColorScheme, TextInput, Linking, Alert, StatusBar, Pressable,
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { FlatList, Linking, Pressable, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
 import { Colors } from '@/constants/colors';
-import { MOCK_DOCUMENTS } from '@/services/mockData';
+import { spacing } from '@/constants/theme';
+import { MOCK_DOCUMENTS, MOCK_NEWS_ITEMS } from '@/services/mockData';
+import { useProfileStore } from '@/store/userProfileStore';
+import {
+  AppButton,
+  AppText,
+  Badge,
+  Chip,
+  EmptyState,
+  Screen,
+  SearchField,
+  SectionHeader,
+} from '@/components/ui/design-system';
 
 type Document = (typeof MOCK_DOCUMENTS)[0];
 
-const DOC_CATEGORIES = [
-  { id: 'all', label: 'All', emoji: '📂' },
-  { id: 'law', label: 'Law', emoji: '⚖️' },
-  { id: 'rights', label: 'Rights', emoji: '✊' },
-  { id: 'election', label: 'Election', emoji: '🗳️' },
-  { id: 'agriculture', label: 'Agri', emoji: '🌾' },
+const CATEGORIES = [
+  { id: 'all', label: 'All' },
+  { id: 'law', label: 'Law' },
+  { id: 'rights', label: 'Rights' },
+  { id: 'election', label: 'Election' },
+  { id: 'agriculture', label: 'Agriculture' },
 ];
 
-function DocCard({ doc }: { doc: Document }) {
-  const colorScheme = useColorScheme();
-  const C = colorScheme === 'dark' ? Colors.dark : Colors.light;
-
-  const typeColors: Record<string, string> = {
-    Act: C.trustDoc,
-    'Government Order': C.trustCitizen,
-    Guidelines: C.trustVerified,
-    RTI: C.trustAI,
-  };
-  const typeColor = typeColors[doc.type] || C.primary;
-
+function DocumentCard({ doc }: { doc: Document }) {
+  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
     <Pressable
+      accessibilityRole="link"
+      onPress={() => Linking.openURL(doc.url)}
       style={({ pressed }) => [
         styles.docCard,
-        { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.92 : 1 },
+        { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
       ]}
     >
-      {/* Top row */}
-      <View style={styles.docTop}>
-        <View style={[styles.docTypeTag, { backgroundColor: typeColor + '20', borderColor: typeColor + '50' }]}>
-          <Text style={[styles.docTypeText, { color: typeColor }]}>{doc.type}</Text>
-        </View>
-        <View style={[styles.langTag, { backgroundColor: C.border }]}>
-          <Text style={[styles.langText, { color: C.textMuted }]}>
-            {doc.language === 'both' ? '🇮🇳 HI+EN' : doc.language === 'hi' ? '🇮🇳 हिंदी' : '🇬🇧 EN'}
-          </Text>
-        </View>
+      <View style={styles.cardTop}>
+        <Badge label={doc.type} tone={doc.type === 'Act' ? 'fact' : 'verified'} />
+        <Badge label={doc.language === 'both' ? 'HI + EN' : doc.language.toUpperCase()} tone="muted" />
       </View>
-
-      <Text style={[styles.docTitle, { color: C.text }]}>{doc.title}</Text>
-
-      <View style={styles.docMetaRow}>
-        <Text style={[styles.docMinistry, { color: C.primary }]} numberOfLines={1}>
-          🏛️ {doc.ministry}
-        </Text>
-        <Text style={[styles.docDate, { color: C.textMuted }]}>{doc.date}</Text>
+      <AppText variant="cardTitle">{doc.title}</AppText>
+      <AppText variant="caption" tone="muted">{doc.ministry} • {doc.date}</AppText>
+      <View style={[styles.summaryBox, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
+        <Badge label="AI-ready summary" tone="ai" />
+        <AppText variant="body" tone="secondary">{doc.summary}</AppText>
       </View>
-
-      {/* AI Summary */}
-      <View style={[styles.docSummary, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
-        <Text style={[styles.docSummaryLabel, { color: C.primary }]}>🤖 सारांश</Text>
-        <Text style={[styles.docSummaryText, { color: C.textSecondary }]}>{doc.summary}</Text>
-      </View>
-
-      {/* Actions */}
-      <View style={styles.docActions}>
-        <TouchableOpacity
-          style={[styles.docBtn, styles.docBtnPrimary, { backgroundColor: C.secondary }]}
-          onPress={() => Linking.openURL(doc.url)}
-        >
-          <Text style={styles.docBtnPrimaryText}>📄 देखें / View</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.docBtn, { borderColor: C.border, borderWidth: 1 }]}
-          onPress={() => Alert.alert('AI Explain', `AI will explain this document in simple ${doc.language === 'hi' ? 'Hindi' : 'English'}. Requires Gemini API key.`)}
-        >
-          <Text style={[styles.docBtnSecText, { color: C.textSecondary }]}>🤖 AI समझाओ</Text>
-        </TouchableOpacity>
+      <View style={styles.actionRow}>
+        <AppButton label="Open document" onPress={() => Linking.openURL(doc.url)} style={{ flex: 1 }} />
+        <AppButton label="Explain" variant="secondary" style={{ flex: 1 }} />
       </View>
     </Pressable>
   );
 }
 
-export default function DocumentsScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+export default function LocalScreen() {
+  const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
+  const { profile } = useProfileStore();
+  const [category, setCategory] = useState('all');
+  const [search, setSearch] = useState('');
 
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const filteredDocs = MOCK_DOCUMENTS.filter((doc) => {
-    const matchesCategory = selectedCategory === 'all' || doc.category === selectedCategory;
-    const matchesSearch =
-      !searchQuery ||
-      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.ministry.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  const localStories = MOCK_NEWS_ITEMS.filter((item) => ['state', 'accountability', 'fact_check'].includes(item.category || '')).slice(0, 3);
+  const documents = useMemo(() => {
+    return MOCK_DOCUMENTS.filter((doc) => {
+      const matchesCategory = category === 'all' || doc.category === category;
+      const haystack = `${doc.title} ${doc.ministry} ${doc.summary}`.toLowerCase();
+      return matchesCategory && haystack.includes(search.trim().toLowerCase());
+    });
+  }, [category, search]);
 
   return (
-    <View style={[styles.container, { backgroundColor: C.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.light.secondary} />
-
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: C.secondary, borderBottomColor: C.primary }]}>
-        <Text style={styles.headerTitle}>📂 दस्तावेज़ • Documents</Text>
-        <Text style={styles.headerSub}>Government orders, RTI, Laws — AI simplified</Text>
-      </View>
-
-      {/* RTI Banner */}
-      <TouchableOpacity
-        style={[styles.rtiBanner, { backgroundColor: C.primary }]}
-        onPress={() => Linking.openURL('https://rtionline.gov.in')}
-      >
-        <Text style={styles.rtiBannerText}>✊ RTI दायर करें — File a Right to Information Request →</Text>
-      </TouchableOpacity>
-
-      {/* Search */}
-      <View style={[styles.searchContainer, { backgroundColor: C.surface, borderColor: C.border }]}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={[styles.searchInput, { color: C.text }]}
-          placeholder="खोजें — ministry, law name..."
-          placeholderTextColor={C.textMuted}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
-
-      {/* Category Chips */}
-      <View style={styles.categoryRow}>
-        {DOC_CATEGORIES.map((cat) => {
-          const isSelected = selectedCategory === cat.id;
-          return (
-            <TouchableOpacity
-              key={cat.id}
-              onPress={() => setSelectedCategory(cat.id)}
-              style={[
-                styles.catChip,
-                { backgroundColor: isSelected ? C.secondary : C.surface, borderColor: C.border },
-              ]}
-            >
-              <Text style={styles.catEmoji}>{cat.emoji}</Text>
-              <Text style={[styles.catLabel, { color: isSelected ? '#fff' : C.textSecondary }]}>
-                {cat.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
+    <Screen>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
       <FlatList
-        data={filteredDocs}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <DocCard doc={item} />}
-        contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={{ fontSize: 40 }}>📂</Text>
-            <Text style={[{ color: C.textSecondary, marginTop: 12 }]}>कोई दस्तावेज़ नहीं मिला</Text>
+        data={documents}
+        keyExtractor={(item, index) => `${item.id}_${index}`}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <View style={[styles.localHero, { backgroundColor: C.secondary }]}>
+              <AppText variant="caption" tone="inverse">Current district</AppText>
+              <AppText variant="display" tone="inverse">{profile.districtName}</AppText>
+              <AppText variant="body" tone="inverse" style={{ opacity: 0.76 }}>
+                Local stories, civic documents, alerts, and government updates for {profile.stateName}.
+              </AppText>
+              <View style={styles.actionRow}>
+                <AppButton label="Change location" variant="secondary" style={{ flex: 1 }} />
+                <AppButton label="Use GPS" style={{ flex: 1 }} />
+              </View>
+            </View>
+
+            <SectionHeader title="Nearby and state updates" eyebrow="Local signal" />
+            <View style={styles.storyStack}>
+              {localStories.map((story, index) => (
+                <View key={`${story.id}_${index}`} style={[styles.localStory, { backgroundColor: C.card, borderColor: C.border }]}>
+                  <View style={styles.rowText}>
+                    <AppText variant="cardTitle" numberOfLines={2}>{story.title}</AppText>
+                    <AppText variant="caption" tone="muted">{story.channelName} • verified source</AppText>
+                  </View>
+                  <Badge label={story.category === 'fact_check' ? 'Fact check' : 'Local'} tone={story.category === 'fact_check' ? 'fact' : 'verified'} />
+                </View>
+              ))}
+            </View>
+
+            <SectionHeader title="Civic documents" eyebrow="RTI, law, schemes" />
+            <SearchField
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search documents, ministry, scheme..."
+              containerStyle={{ marginBottom: spacing.md }}
+            />
+            <View style={styles.chipWrap}>
+              {CATEGORIES.map((item) => (
+                <Chip
+                  key={item.id}
+                  label={item.label}
+                  selected={category === item.id}
+                  onPress={() => setCategory(item.id)}
+                />
+              ))}
+            </View>
+            <AppButton
+              label="File RTI request"
+              icon="✊"
+              onPress={() => Linking.openURL('https://rtionline.gov.in')}
+              style={{ marginTop: spacing.lg }}
+            />
           </View>
         }
-        ListFooterComponent={<View style={{ height: 100 }} />}
+        renderItem={({ item }) => <DocumentCard doc={item} />}
+        ListEmptyComponent={<EmptyState title="No civic documents" message="Try a different category or a shorter search term." />}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       />
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    paddingTop: 54, paddingBottom: 16, paddingHorizontal: 20,
-    borderBottomWidth: 3,
-  },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 3 },
-
-  rtiBanner: {
-    paddingHorizontal: 20, paddingVertical: 12,
+  content: { paddingBottom: 104 },
+  header: { padding: spacing.lg },
+  localHero: { borderRadius: 22, padding: spacing.xl, gap: spacing.sm },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  storyStack: { gap: spacing.sm },
+  localStory: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.md,
     alignItems: 'center',
   },
-  rtiBannerText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-
-  searchContainer: {
-    margin: 16, marginBottom: 8, borderRadius: 12, borderWidth: 1,
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10,
-  },
-  searchIcon: { fontSize: 16, marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14 },
-
-  categoryRow: {
-    flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 12,
-  },
-  catChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1,
-  },
-  catEmoji: { fontSize: 14 },
-  catLabel: { fontSize: 12, fontWeight: '600' },
-
-  listContent: { paddingHorizontal: 16 },
-
+  rowText: { flex: 1, gap: 2 },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   docCard: {
-    borderRadius: 16, borderWidth: 1, padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
-  docTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  docTypeTag: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
-  docTypeText: { fontSize: 11, fontWeight: '700' },
-  langTag: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  langText: { fontSize: 11, fontWeight: '600' },
-
-  docTitle: { fontSize: 15, fontWeight: '700', lineHeight: 21, marginBottom: 8 },
-  docMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  docMinistry: { fontSize: 12, fontWeight: '600', flex: 1 },
-  docDate: { fontSize: 11 },
-
-  docSummary: { borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 12 },
-  docSummaryLabel: { fontSize: 11, fontWeight: '700', marginBottom: 4 },
-  docSummaryText: { fontSize: 12.5, lineHeight: 18 },
-
-  docActions: { flexDirection: 'row', gap: 10 },
-  docBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  docBtnPrimary: {},
-  docBtnPrimaryText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  docBtnSecText: { fontSize: 13, fontWeight: '600' },
-
-  empty: { alignItems: 'center', paddingTop: 60 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
+  summaryBox: { borderRadius: 12, borderWidth: 1, padding: spacing.md, gap: spacing.sm },
 });
