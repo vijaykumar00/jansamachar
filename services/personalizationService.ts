@@ -1,4 +1,5 @@
 import type { UserProfile } from '../store/userProfileStore';
+import type { NewsItem } from './newsService';
 import { INTERESTS, PROFESSIONS } from '../constants/professions';
 import { searchYouTubeNews, ytSearchToNewsItem } from './youtubeSearchService';
 import {
@@ -14,7 +15,7 @@ export interface FeedSection {
   title: string;
   titleHi: string;
   emoji: string;
-  items: any[];
+  items: NewsItem[];
   geoLevel: 'district' | 'state' | 'national' | 'profession' | 'interest';
 }
 

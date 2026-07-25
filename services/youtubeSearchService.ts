@@ -4,6 +4,7 @@
 // Uses: videoCategoryId=25 (News & Politics), regionCode=IN, order=date
 
 import { API_CONFIG } from '../constants/api';
+import type { NewsItem } from './newsService';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/search';
 
@@ -67,13 +68,16 @@ export async function searchYouTubeNews(
 }
 
 /** Convert YT search result to unified NewsItem */
-export function ytSearchToNewsItem(v: YTSearchVideo) {
+export function ytSearchToNewsItem(v: YTSearchVideo): NewsItem {
   return {
     id: `yt_${v.videoId}`,
     title: v.title,
     description: v.description,
     thumbnailUrl: v.thumbnailUrl,
     channelName: v.channelName,
+    channelId: v.channelId,
+    channelType: 'youtube_search',
+    language: 'hi',
     publishedAt: v.publishedAt,
     url: `https://www.youtube.com/watch?v=${v.videoId}`,
     videoId: v.videoId,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Alert, Linking, ScrollView, StatusBar, StyleSheet, Switch, View, useColorScheme } from 'react-native';
 import Constants from 'expo-constants';
 import { Colors } from '@/constants/colors';
@@ -9,6 +9,7 @@ import {
   AppButton,
   AppText,
   Badge,
+  Chip,
   JanSamacharLogo,
   Screen,
   SectionHeader,
@@ -46,10 +47,7 @@ function SettingRow({
 export default function ProfileScreen() {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
-  const { profile, resetProfile } = useProfileStore();
-  const [breakingAlerts, setBreakingAlerts] = useState(true);
-  const [dataSaver, setDataSaver] = useState(false);
-  const [autoplay, setAutoplay] = useState(false);
+  const { profile, resetProfile, setProfile } = useProfileStore();
 
   const profession = PROFESSIONS.find((item) => item.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
   const interests = INTERESTS.filter((item) => profile.interests.includes(item.id)).slice(0, 4);
@@ -88,23 +86,54 @@ export default function ProfileScreen() {
           <SettingRow
             title="Breaking news alerts"
             subtitle="Notify only for major verified updates"
-            value={breakingAlerts}
-            onValueChange={setBreakingAlerts}
+            value={profile.breakingAlerts}
+            onValueChange={(value) => setProfile({ breakingAlerts: value })}
           />
           <View style={[styles.divider, { backgroundColor: C.divider }]} />
           <SettingRow
             title="Data saver"
             subtitle="Prefer lighter images and fewer video previews"
-            value={dataSaver}
-            onValueChange={setDataSaver}
+            value={profile.dataSaver}
+            onValueChange={(value) => setProfile({ dataSaver: value })}
           />
           <View style={[styles.divider, { backgroundColor: C.divider }]} />
           <SettingRow
             title="Video autoplay"
             subtitle="Sound never starts automatically"
-            value={autoplay}
-            onValueChange={setAutoplay}
+            value={profile.videoAutoplay}
+            onValueChange={(value) => setProfile({ videoAutoplay: value })}
           />
+          <View style={[styles.divider, { backgroundColor: C.divider }]} />
+          <View style={styles.preferenceBlock}>
+            <AppText variant="bodyStrong">Theme</AppText>
+            <View style={styles.chipWrap}>
+              {(['system', 'light', 'dark'] as const).map((mode) => (
+                <Chip
+                  key={mode}
+                  label={mode[0].toUpperCase() + mode.slice(1)}
+                  selected={profile.themePreference === mode}
+                  onPress={() => setProfile({ themePreference: mode })}
+                  compact
+                />
+              ))}
+            </View>
+          </View>
+          <View style={[styles.divider, { backgroundColor: C.divider }]} />
+          <View style={styles.preferenceBlock}>
+            <AppText variant="bodyStrong">Notification budget</AppText>
+            <AppText variant="caption" tone="muted">Maximum verified alerts per day</AppText>
+            <View style={styles.chipWrap}>
+              {[3, 6, 12].map((budget) => (
+                <Chip
+                  key={budget}
+                  label={`${budget}/day`}
+                  selected={profile.notificationBudgetPerDay === budget}
+                  onPress={() => setProfile({ notificationBudgetPerDay: budget })}
+                  compact
+                />
+              ))}
+            </View>
+          </View>
         </View>
 
         <SectionHeader title="Trust system" eyebrow="How JanSamachar labels news" />
@@ -162,6 +191,8 @@ const styles = StyleSheet.create({
   badgeWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   panel: { borderRadius: 18, borderWidth: 1, padding: spacing.md, gap: spacing.md },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 56 },
+  preferenceBlock: { gap: spacing.sm },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   divider: { height: 1 },
   trustRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   actionRow: { flexDirection: 'row', gap: spacing.sm },

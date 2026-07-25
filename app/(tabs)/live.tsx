@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
-import { Alert, FlatList, Linking, Pressable, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Alert, FlatList, Linking, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
 import { Image } from 'expo-image';
+import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { spacing } from '@/constants/theme';
 import { MOCK_LIVE_STREAMS, MOCK_NEWS_ITEMS } from '@/services/mockData';
+import { getActiveLiveStreamCards, type LiveStreamCard } from '@/services/supabaseService';
+import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
+import AnimatedNewsCard, { type NewsCardItem } from '@/components/AnimatedNewsCard';
 import {
   AppButton,
   AppText,
@@ -11,6 +15,7 @@ import {
   Chip,
   EmptyState,
   IconButton,
+  LoadingState,
   Screen,
   SectionHeader,
 } from '@/components/ui/design-system';
@@ -23,42 +28,99 @@ function formatViewers(n: number): string {
   return String(n);
 }
 
+async function loadVideoTab() {
+  const [streams, videos] = await Promise.allSettled([
+    getActiveLiveStreamCards(),
+    searchYouTubeNews('India news explainers live fact check ground report', 14),
+  ]);
+
+  const liveStreams = streams.status === 'fulfilled' && streams.value.length > 0
+    ? streams.value
+    : MOCK_LIVE_STREAMS.map((stream): LiveStreamCard => ({
+        id: stream.id,
+        title: stream.title,
+        streamer: stream.streamer,
+        viewers: stream.viewers,
+        thumbnail: stream.thumbnail,
+        isLive: stream.isLive,
+        hasDoc: stream.hasDoc,
+        startedAt: stream.startedAt,
+        category: stream.category,
+      }));
+
+  const liveVideos = videos.status === 'fulfilled' ? videos.value.map(ytSearchToNewsItem) : [];
+  const fallbackVideos = MOCK_NEWS_ITEMS.filter((item) => item.videoId || item.source === 'youtube');
+
+  return {
+    streams: liveStreams,
+    videos: liveVideos.length > 0 ? liveVideos : fallbackVideos,
+  };
+}
+
+function matchesFilter(item: NewsCardItem, filter: string) {
+  if (filter === 'All') return true;
+  if (filter === 'Live') return item.source === 'youtube';
+  if (filter === 'Fact checks') return item.category === 'fact_check' || item.channelName.toLowerCase().includes('fact');
+  if (filter === 'Ground reports') return item.category === 'state' || item.channelName.toLowerCase().includes('ground');
+  return item.title.toLowerCase().includes('explainer') || item.category === 'technology';
+}
+
 export default function VideoScreen() {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const [filter, setFilter] = useState('All');
-  const featured = MOCK_NEWS_ITEMS.find((item) => item.videoId) || MOCK_NEWS_ITEMS[0];
-  const videoStories = MOCK_NEWS_ITEMS.filter((item) => item.videoId || item.source === 'youtube');
+  const query = useQuery({
+    queryKey: ['video-tab'],
+    queryFn: loadVideoTab,
+    staleTime: 1000 * 60 * 4,
+  });
+
+  const videos = useMemo(
+    () => (query.data?.videos || []).filter((item) => matchesFilter(item, filter)),
+    [filter, query.data?.videos]
+  );
+  const featured = videos[0] || MOCK_NEWS_ITEMS.find((item) => item.videoId) || MOCK_NEWS_ITEMS[0];
+  const streams = query.data?.streams || [];
 
   return (
     <Screen>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
       <FlatList
-        data={videoStories}
+        data={videos.slice(1)}
         keyExtractor={(item, index) => `${item.id}_${index}`}
+        refreshControl={
+          <RefreshControl
+            refreshing={query.isRefetching}
+            onRefresh={query.refetch}
+            colors={[C.primary]}
+            tintColor={C.primary}
+          />
+        }
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={[styles.player, { backgroundColor: C.secondary }]}>
-              <Image
-                source={{ uri: featured.thumbnailUrl }}
-                style={styles.playerImage}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={180}
-              />
+              {featured.thumbnailUrl ? (
+                <Image
+                  source={{ uri: featured.thumbnailUrl }}
+                  style={styles.playerImage}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={180}
+                />
+              ) : null}
               <View style={[styles.playerOverlay, { backgroundColor: C.overlay }]}>
                 <View style={styles.playerTop}>
-                  <Badge label="Featured video" tone="live" icon="▶" />
-                  <IconButton label="Share featured video" icon="↗" />
+                  <Badge label="Featured video" tone="video" icon="VID" />
+                  <IconButton label="Share featured video" icon=">" />
                 </View>
                 <View style={styles.playerBottom}>
                   <AppText variant="screenTitle" tone="inverse" numberOfLines={2}>{featured.title}</AppText>
                   <AppText variant="caption" tone="inverse" style={{ opacity: 0.78 }}>
-                    {featured.channelName} • sound starts only after play
+                    {featured.channelName} - sound starts only after play
                   </AppText>
                   <AppButton
                     label="Watch now"
-                    icon="▶"
+                    icon="PLAY"
                     onPress={() => Linking.openURL(featured.url || 'https://youtube.com')}
                     style={{ alignSelf: 'flex-start', marginTop: spacing.sm }}
                   />
@@ -68,23 +130,29 @@ export default function VideoScreen() {
 
             <View style={styles.filterRow}>
               {FILTERS.map((item) => (
-                <Chip key={item} label={item} selected={filter === item} onPress={() => setFilter(item)} />
+                <Chip key={item} label={item} selected={filter === item} onPress={() => setFilter(item)} compact />
               ))}
             </View>
 
-            <SectionHeader title="Live channels" eyebrow="Available when sources are online" />
+            <SectionHeader title="Live channels" eyebrow="Supabase realtime when configured" />
             <View style={styles.liveStack}>
-              {MOCK_LIVE_STREAMS.map((stream) => (
+              {streams.map((stream) => (
                 <Pressable
                   key={stream.id}
                   accessibilityRole="button"
-                  onPress={() => Alert.alert('Video unavailable', 'Live playback will activate when the streaming API is configured.')}
+                  onPress={() => Alert.alert('Live stream', stream.agoraChannel ? `Agora channel: ${stream.agoraChannel}` : 'Live playback activates when streaming is configured.')}
                   style={({ pressed }) => [
                     styles.liveCard,
                     { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
                   ]}
                 >
-                  <Image source={{ uri: stream.thumbnail }} style={styles.liveThumb} contentFit="cover" cachePolicy="memory-disk" />
+                  {stream.thumbnail ? (
+                    <Image source={{ uri: stream.thumbnail }} style={styles.liveThumb} contentFit="cover" cachePolicy="memory-disk" />
+                  ) : (
+                    <View style={[styles.liveThumb, styles.liveFallback, { backgroundColor: C.surfaceElevated }]}>
+                      <AppText variant="badge" tone="muted">LIVE</AppText>
+                    </View>
+                  )}
                   <View style={styles.liveText}>
                     <View style={styles.cardTop}>
                       <Badge label="LIVE" tone="live" />
@@ -97,30 +165,19 @@ export default function VideoScreen() {
               ))}
             </View>
 
-            <SectionHeader title="Latest videos" eyebrow="Trusted channels" />
+            <SectionHeader title="Latest videos" eyebrow={query.isFetching ? 'Refreshing trusted channels' : 'Trusted channels'} />
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable
-            accessibilityRole="link"
-            onPress={() => Linking.openURL(item.url || 'https://youtube.com')}
-            style={({ pressed }) => [
-              styles.videoRow,
-              { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
-            ]}
-          >
-            <Image source={{ uri: item.thumbnailUrl }} style={styles.videoThumb} contentFit="cover" cachePolicy="memory-disk" />
-            <View style={styles.videoText}>
-              <View style={styles.cardTop}>
-                <Badge label="Video" tone="live" />
-                {item.hasDoc ? <Badge label="Doc" tone="fact" /> : null}
-              </View>
-              <AppText variant="cardTitle" numberOfLines={2}>{item.title}</AppText>
-              <AppText variant="caption" tone="muted">{item.channelName}</AppText>
-            </View>
-          </Pressable>
+        renderItem={({ item, index }) => (
+          <AnimatedNewsCard item={item} index={index} variant="video" />
         )}
-        ListEmptyComponent={<EmptyState title="No videos available" message="Try again when video sources refresh." />}
+        ListEmptyComponent={
+          query.isLoading ? (
+            <LoadingState label="Loading trusted videos..." />
+          ) : (
+            <EmptyState title="No videos available" message="Try another filter or pull to refresh." />
+          )
+        }
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       />
@@ -140,16 +197,7 @@ const styles = StyleSheet.create({
   liveStack: { gap: spacing.md },
   liveCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden', flexDirection: 'row' },
   liveThumb: { width: 118, minHeight: 112 },
+  liveFallback: { alignItems: 'center', justifyContent: 'center' },
   liveText: { flex: 1, padding: spacing.md, gap: spacing.sm },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  videoRow: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-    flexDirection: 'row',
-  },
-  videoThumb: { width: 120, minHeight: 116 },
-  videoText: { flex: 1, padding: spacing.md, gap: spacing.sm },
 });

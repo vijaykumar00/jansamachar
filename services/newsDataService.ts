@@ -4,6 +4,7 @@
 // Supports: India, Hindi + English, category filter, keyword search
 
 import { API_CONFIG } from '../constants/api';
+import type { NewsItem } from './newsService';
 
 const BASE = 'https://newsdata.io/api/1/latest';
 
@@ -122,13 +123,16 @@ export async function fetchNationalNews(language = 'hi,en'): Promise<NewsDataArt
 }
 
 /** Convert NewsData article to our app's unified NewsItem format */
-export function toNewsItem(article: NewsDataArticle) {
+export function toNewsItem(article: NewsDataArticle): NewsItem {
   return {
     id: stableArticleId(article),
     title: article.title,
     description: article.description || '',
-    thumbnailUrl: article.image_url || null,
+    thumbnailUrl: article.image_url || '',
     channelName: article.source_name || article.source_id,
+    channelId: article.source_id,
+    channelType: 'newsdata',
+    language: article.language || 'en',
     publishedAt: article.pubDate,
     url: article.link,
     source: 'newsdata' as const,

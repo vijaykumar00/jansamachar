@@ -16,7 +16,7 @@ export interface NewsItem {
   channelId: string;
   channelType: string;
   language: string;
-  source: 'youtube' | 'rss' | 'citizen' | 'official';
+  source: 'youtube' | 'rss' | 'citizen' | 'official' | 'newsdata';
   trustLevel: 'verified' | 'youtube' | 'citizen' | 'breaking' | 'official';
   hasDoc?: boolean;
   docUrl?: string;

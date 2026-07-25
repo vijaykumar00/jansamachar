@@ -8,6 +8,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS } from '@/constants/professions';
 import { spacing } from '@/constants/theme';
@@ -167,8 +168,8 @@ export default function HomeScreen() {
             <View style={styles.headerTop}>
               <JanSamacharLogo compact />
               <View style={styles.headerActions}>
-                <IconButton label="Search news" icon="⌕" />
-                <IconButton label="Notifications" icon="!" />
+                <IconButton label="Search news" icon="Q" onPress={() => router.push('/search')} />
+                <IconButton label="Refresh feed" icon="!" onPress={() => query.refetch()} />
               </View>
             </View>
             <View style={[styles.hero, { backgroundColor: C.secondary }]}>
@@ -209,7 +210,14 @@ export default function HomeScreen() {
           if (item.type === 'section') {
             return <SectionHeader title={item.title} eyebrow={item.eyebrow} />;
           }
-          return <AnimatedNewsCard item={item.item} index={index} featured={item.featured} />;
+          return (
+            <AnimatedNewsCard
+              item={item.item}
+              index={index}
+              featured={item.featured}
+              variant={item.item.videoId || item.item.source === 'youtube' ? 'video' : item.item.category === 'state' ? 'local' : 'article'}
+            />
+          );
         }}
         ListEmptyComponent={
           query.isLoading ? (

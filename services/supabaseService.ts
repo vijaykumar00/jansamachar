@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { API_CONFIG } from '../constants/api';
+import type { NewsItem } from './newsService';
 
 // ─── Client ────────────────────────────────────────────────────────────────
 export const supabase = createClient(
@@ -153,6 +154,27 @@ export async function getCitizenNews(limit = 20, category?: string) {
   return data || [];
 }
 
+export async function getCitizenNewsItems(limit = 12, category?: string): Promise<NewsItem[]> {
+  const rows = await getCitizenNews(limit, category);
+  return rows.map((row: any): NewsItem => ({
+    id: row.id || `citizen_${row.created_at || Date.now()}`,
+    title: row.title || 'Citizen report',
+    description: row.description || '',
+    thumbnailUrl: row.image_url || '',
+    publishedAt: row.created_at || new Date().toISOString(),
+    channelName: row.profiles?.display_name || 'Citizen reporter',
+    channelId: row.user_id || '',
+    channelType: row.profiles?.trust_level || 'citizen',
+    language: row.language || 'hi',
+    source: 'citizen',
+    trustLevel: row.trust_level === 'verified' ? 'verified' : 'citizen',
+    hasDoc: Boolean(row.doc_url),
+    docUrl: row.doc_url,
+    category: row.category || 'local',
+    url: row.video_url || row.doc_url || '',
+  }));
+}
+
 export async function upvotePost(postId: string) {
   const { error } = await supabase.rpc('increment_upvotes', { post_id: postId });
   if (error) throw error;
@@ -195,6 +217,35 @@ export async function getActiveLiveStreams() {
     return [];
   }
   return data || [];
+}
+
+export interface LiveStreamCard {
+  id: string;
+  title: string;
+  streamer: string;
+  viewers: number;
+  thumbnail: string;
+  isLive: boolean;
+  hasDoc: boolean;
+  startedAt: string;
+  category: string;
+  agoraChannel?: string;
+}
+
+export async function getActiveLiveStreamCards(): Promise<LiveStreamCard[]> {
+  const rows = await getActiveLiveStreams();
+  return rows.map((row: any): LiveStreamCard => ({
+    id: row.id || row.agora_channel,
+    title: row.title || 'Live update',
+    streamer: row.profiles?.display_name || 'Verified live desk',
+    viewers: row.viewer_count || 0,
+    thumbnail: row.thumbnail_url || '',
+    isLive: Boolean(row.is_live),
+    hasDoc: Boolean(row.doc_url),
+    startedAt: row.started_at || new Date().toISOString(),
+    category: row.category || 'general',
+    agoraChannel: row.agora_channel,
+  }));
 }
 
 export async function endLiveStream(streamId: string) {

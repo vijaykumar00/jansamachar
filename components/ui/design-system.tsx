@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Modal,
   Pressable,
   PressableProps,
   StyleProp,
@@ -21,6 +22,7 @@ import { layout, radius, spacing, typography } from '@/constants/theme';
 
 type Tone = 'primary' | 'secondary' | 'muted' | 'inverse' | 'danger' | 'success' | 'info';
 type AppTextVariant = keyof typeof typography;
+type BadgeTone = 'primary' | 'verified' | 'live' | 'ai' | 'fact' | 'muted' | 'warning' | 'local' | 'video' | 'saved';
 
 export function useThemeColors() {
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
@@ -40,7 +42,7 @@ export function AppText({
     muted: C.textMuted,
     inverse: C.textInverse,
     danger: C.error,
-    success: C.verified,
+    success: C.success,
     info: C.info,
   };
 
@@ -102,6 +104,7 @@ export function AppButton({
   label,
   icon,
   variant = 'primary',
+  size = 'md',
   style,
   textStyle,
   ...props
@@ -109,6 +112,7 @@ export function AppButton({
   label: string;
   icon?: string;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md';
   textStyle?: TextProps['style'];
 }) {
   const C = useThemeColors();
@@ -125,6 +129,7 @@ export function AppButton({
       accessibilityRole="button"
       style={({ pressed }) => [
         styles.button,
+        size === 'sm' && styles.buttonSmall,
         variantStyle,
         { opacity: pressed ? 0.82 : 1 },
         style as ViewStyle,
@@ -162,10 +167,12 @@ export function Badge({
   label,
   tone = 'muted',
   icon,
+  style,
 }: {
   label: string;
-  tone?: 'primary' | 'verified' | 'live' | 'ai' | 'fact' | 'muted' | 'warning';
+  tone?: BadgeTone;
   icon?: string;
+  style?: StyleProp<ViewStyle>;
 }) {
   const C = useThemeColors();
   const color = {
@@ -176,9 +183,12 @@ export function Badge({
     fact: C.factCheck,
     muted: C.textMuted,
     warning: C.warning,
+    local: C.local,
+    video: C.video,
+    saved: C.saved,
   }[tone];
   return (
-    <View style={[styles.badge, { backgroundColor: color + '1F', borderColor: color + '55' }]}>
+    <View style={[styles.badge, { backgroundColor: color + '1F', borderColor: color + '55' }, style]}>
       {icon ? <Text style={[styles.badgeIcon, { color }]}>{icon}</Text> : null}
       <Text style={[typography.badge, { color }]}>{label}</Text>
     </View>
@@ -189,9 +199,10 @@ export function Chip({
   label,
   selected = false,
   icon,
+  compact = false,
   style,
   ...props
-}: PressableProps & { label: string; selected?: boolean; icon?: string }) {
+}: PressableProps & { label: string; selected?: boolean; icon?: string; compact?: boolean }) {
   const C = useThemeColors();
   return (
     <Pressable
@@ -199,6 +210,7 @@ export function Chip({
       accessibilityState={{ selected }}
       style={({ pressed }) => [
         styles.chip,
+        compact && styles.chipCompact,
         {
           backgroundColor: selected ? C.primary : C.surface,
           borderColor: selected ? C.primary : C.border,
@@ -244,7 +256,7 @@ export function SearchField({
   const C = useThemeColors();
   return (
     <View style={[styles.searchField, { backgroundColor: C.surface, borderColor: C.border }, containerStyle]}>
-      <Text style={[styles.searchIcon, { color: C.textMuted }]}>⌕</Text>
+      <Text style={[styles.searchIcon, { color: C.textMuted }]}>Q</Text>
       <TextInput
         placeholderTextColor={C.textMuted}
         style={[styles.searchInput, { color: C.text }, inputStyle]}
@@ -288,7 +300,15 @@ export function LoadingState({ label = 'Loading latest stories...' }: { label?: 
   );
 }
 
-export function SkeletonBlock({ height = 72 }: { height?: number }) {
+export function SkeletonBlock({
+  height = 72,
+  width = '100%',
+  borderRadius = radius.lg,
+}: {
+  height?: number;
+  width?: number | `${number}%`;
+  borderRadius?: number;
+}) {
   const C = useThemeColors();
   const opacity = useRef(new Animated.Value(0.55)).current;
 
@@ -307,9 +327,68 @@ export function SkeletonBlock({ height = 72 }: { height?: number }) {
     <Animated.View
       style={[
         styles.skeleton,
-        { height, backgroundColor: C.skeleton, opacity },
+        { height, width, borderRadius, backgroundColor: C.skeleton, opacity },
       ]}
     />
+  );
+}
+
+export function BottomSheet({
+  visible,
+  title,
+  children,
+  onClose,
+}: {
+  visible: boolean;
+  title?: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  const C = useThemeColors();
+  const translateY = useRef(new Animated.Value(24)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+    translateY.setValue(24);
+    opacity.setValue(0);
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+  }, [opacity, translateY, visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.sheetRoot}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close sheet"
+          style={[styles.sheetBackdrop, { backgroundColor: C.overlay }]}
+          onPress={onClose}
+        />
+        <Animated.View
+          style={[
+            styles.sheetPanel,
+            {
+              backgroundColor: C.card,
+              borderColor: C.border,
+              opacity,
+              transform: [{ translateY }],
+            },
+          ]}
+        >
+          <View style={styles.sheetHandle} />
+          {title ? (
+            <View style={styles.sheetHeader}>
+              <AppText variant="sectionTitle">{title}</AppText>
+              <IconButton label="Close" icon="X" onPress={onClose} />
+            </View>
+          ) : null}
+          {children}
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
@@ -339,6 +418,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  buttonSmall: {
+    minHeight: 36,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   buttonIcon: { fontSize: 16, fontWeight: '900' },
   iconButton: {
@@ -371,6 +456,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+  },
+  chipCompact: {
+    minHeight: 30,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   chipIcon: { fontSize: 13, fontWeight: '900' },
   sectionHeader: {
@@ -410,5 +500,33 @@ const styles = StyleSheet.create({
   emptyMarkText: { color: '#E85D04', fontSize: 25, fontWeight: '900', fontStyle: 'italic' },
   loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
   skeletonStack: { alignSelf: 'stretch', gap: spacing.md, marginTop: spacing.lg },
-  skeleton: { borderRadius: radius.lg, width: '100%' },
+  skeleton: {},
+  sheetRoot: { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: { ...StyleSheet.absoluteFill },
+  sheetPanel: {
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
+    maxHeight: '82%',
+  },
+  sheetHandle: {
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#8B98A8',
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+    opacity: 0.5,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
 });

@@ -10,10 +10,13 @@ import {
   useColorScheme,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { AppButton, AppText, Badge, IconButton } from '@/components/ui/design-system';
 import { summarizeNews } from '@/services/geminiService';
+
+export type NewsCardVariant = 'article' | 'video' | 'local';
 
 export interface NewsCardItem {
   id: string;
@@ -35,6 +38,7 @@ interface Props {
   item: NewsCardItem;
   index: number;
   featured?: boolean;
+  variant?: NewsCardVariant;
 }
 
 const TRUST_CONFIG: Record<string, { label: string; tone: 'verified' | 'live' | 'warning' | 'fact' | 'muted' }> = {
@@ -58,7 +62,7 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function NewsCard({ item, index, featured = false }: Props) {
+function NewsCard({ item, index, featured = false, variant }: Props) {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -85,7 +89,9 @@ function NewsCard({ item, index, featured = false }: Props) {
   }, [index, opacity, translateY]);
 
   const trust = TRUST_CONFIG[item.trustLevel] || TRUST_CONFIG.citizen;
-  const isVideo = item.source === 'youtube' || Boolean(item.videoId);
+  const computedVariant: NewsCardVariant = variant || (item.videoId || item.source === 'youtube' ? 'video' : item.category === 'state' ? 'local' : 'article');
+  const isVideo = computedVariant === 'video' || item.source === 'youtube' || Boolean(item.videoId);
+  const isLocal = computedVariant === 'local';
   const sourceLine = useMemo(() => {
     const bits = [item.channelName, timeAgo(item.publishedAt)];
     if (item.category) bits.push(item.category.replace('_', ' '));
@@ -97,7 +103,21 @@ function NewsCard({ item, index, featured = false }: Props) {
       Linking.openURL(`https://www.youtube.com/watch?v=${item.videoId}`);
       return;
     }
-    if (item.url) Linking.openURL(item.url);
+    router.push({
+      pathname: '/modal',
+      params: {
+        id: item.id,
+        title: item.title,
+        description: item.description || '',
+        source: item.channelName,
+        publishedAt: item.publishedAt,
+        url: item.url || '',
+        thumbnailUrl: item.thumbnailUrl || '',
+        trustLevel: item.trustLevel,
+        category: item.category || '',
+        aiSummary: aiSummary || item.aiSummary || '',
+      },
+    });
   };
 
   const handleAI = async () => {
@@ -133,6 +153,7 @@ function NewsCard({ item, index, featured = false }: Props) {
         style={({ pressed }) => [
           styles.card,
           featured && styles.featuredCard,
+          isLocal && styles.localCard,
           {
             backgroundColor: C.card,
             borderColor: C.border,
@@ -165,6 +186,7 @@ function NewsCard({ item, index, featured = false }: Props) {
         <View style={styles.body}>
           <View style={styles.badgeRow}>
             <Badge label={trust.label} tone={trust.tone} />
+            {isLocal ? <Badge label="Local signal" tone="local" /> : null}
             {item.aiSummary ? <Badge label="AI summary" tone="ai" /> : null}
           </View>
 
@@ -235,6 +257,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   featuredCard: { borderRadius: radius.xl },
+  localCard: { borderLeftWidth: 4 },
   mediaWrap: { position: 'relative', backgroundColor: '#111827' },
   media: { width: '100%', aspectRatio: 16 / 9 },
   featuredMedia: { aspectRatio: 1.75 },

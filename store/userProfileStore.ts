@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ProfessionId, AgeGroup, Language } from '../constants/professions';
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+
 export interface UserProfile {
   // Onboarding completed?
   onboardingDone: boolean;
@@ -18,6 +20,12 @@ export interface UserProfile {
   interests: string[];
   // Language
   language: Language;
+  // Reading and delivery preferences
+  themePreference: ThemePreference;
+  notificationBudgetPerDay: number;
+  breakingAlerts: boolean;
+  dataSaver: boolean;
+  videoAutoplay: boolean;
   // Greeting name (optional, from auth)
   displayName?: string;
 }
@@ -41,6 +49,11 @@ const DEFAULT_PROFILE: UserProfile = {
   districtName: 'New Delhi',
   interests: ['politics', 'economy', 'accountability'],
   language: 'both',
+  themePreference: 'system',
+  notificationBudgetPerDay: 6,
+  breakingAlerts: true,
+  dataSaver: false,
+  videoAutoplay: false,
 };
 
 const STORAGE_KEY = 'jansamachar_user_profile_v2';
