@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "jansamachar",
+    "name": "JanSamachar",
     "slug": "jansamachar",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,15 +8,17 @@
     "scheme": "jansamachar",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.jansamachar.app"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FF9933",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "package": "com.jansamachar.app",
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -31,7 +33,14 @@
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#FF9933"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#FF9933"
         }
       ]
     ],
