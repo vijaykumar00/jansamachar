@@ -1,11 +1,11 @@
-import React, { useMemo } from 'react';
-import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View, useWindowDimensions, type ViewToken } from 'react-native';
 import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
-import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
 import { AppIcon, AppText, Badge, EmptyState, IconButton, LoadingState, Screen, SectionHeader } from '@/components/ui/design-system';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
@@ -16,7 +16,7 @@ type LongFormItem = {
   title: string;
   channelName: string;
   thumbnailUrl: string;
-  url: string;
+  videoId?: string;
   isLive?: boolean;
   viewers?: number;
 };
@@ -42,7 +42,7 @@ async function loadVideoTab() {
       title: item.title,
       channelName: item.channelName,
       thumbnailUrl: item.thumbnailUrl || '',
-      url: item.url || 'https://youtube.com',
+      videoId: item.videoId,
     })),
     fallbackLabel: usingFallback ? fallbackLabel(createFallbackMeta('empty_response', 'video sources')) : '',
   };
@@ -55,16 +55,17 @@ function formatViewers(n?: number): string {
   return `${n} watching`;
 }
 
-function LongFormCard({ item }: { item: LongFormItem }) {
+function LongFormCard({ item, selected, onSelect }: { item: LongFormItem; selected: boolean; onSelect: () => void }) {
   const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   const dataSaver = useProfileStore((state) => state.profile.dataSaver);
   return (
     <Pressable
-      accessibilityRole="link"
-      onPress={() => openExternalUrl(item.url)}
+      accessibilityRole="button"
+      accessibilityLabel={`Play ${item.title}`}
+      onPress={onSelect}
       style={({ pressed }) => [
         styles.longCard,
-        { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
+        { backgroundColor: C.card, borderColor: selected ? C.coral : C.border, opacity: pressed ? 0.88 : 1 },
       ]}
     >
       {item.thumbnailUrl && !dataSaver ? (
@@ -87,34 +88,53 @@ function LongFormCard({ item }: { item: LongFormItem }) {
   );
 }
 
-function ClipPage({ item, height }: { item: NewsCardItem; height: number }) {
+function VideoPlayerFallback({ dataSaver }: { dataSaver: boolean }) {
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  return (
+  <View style={[styles.playerFallback, { backgroundColor: C.surfaceElevated }]}>
+    <AppIcon name={dataSaver ? 'offline' : 'video'} color={C.textMuted} size={28} />
+    <AppText variant="badge" tone="muted">{dataSaver ? 'PREVIEW OFF' : 'VIDEO UNAVAILABLE'}</AppText>
+  </View>
+  );
+}
+
+function ClipPage({ item, height, active }: { item: NewsCardItem; height: number; active: boolean }) {
   const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   const dataSaver = useProfileStore((state) => state.profile.dataSaver);
+  const videoHeight = Math.min(height - 150, 420);
   return (
-    <Pressable
-      accessibilityRole="link"
-      onPress={() => openExternalUrl(item.url || 'https://youtube.com')}
-      style={[styles.clipPage, { height, backgroundColor: C.background }]}
-    >
+    <View style={[styles.clipPage, { height, backgroundColor: C.background }]}>
       <View style={[styles.clipFrame, { backgroundColor: C.secondary }]}>
-        {item.thumbnailUrl && !dataSaver ? (
+        {item.videoId && !dataSaver ? (
+          <YoutubePlayer
+            height={videoHeight}
+            play={active}
+            videoId={item.videoId}
+            initialPlayerParams={{ controls: true, modestbranding: true, rel: false }}
+            webViewStyle={styles.youtubeWebView}
+          />
+        ) : item.thumbnailUrl && !dataSaver ? (
           <Image source={{ uri: item.thumbnailUrl }} style={styles.clipImage} contentFit="cover" cachePolicy="memory-disk" />
-        ) : null}
-        <View style={[styles.clipOverlay, { backgroundColor: C.overlay }]}>
+        ) : (
+          <VideoPlayerFallback dataSaver={dataSaver} />
+        )}
+        <View style={[styles.clipOverlay, { backgroundColor: item.videoId && !dataSaver ? 'transparent' : C.overlay }]} pointerEvents="box-none">
           <View style={styles.clipTop}>
             <Badge label={item.duration || 'SHORT'} tone="video" />
             <IconButton label="Share clip" icon="share" />
           </View>
-          <View style={styles.playCircle}>
-            <AppIcon name="play" color={C.textInverse} size={40} />
-          </View>
-          <View style={styles.clipBottom}>
+          {!item.videoId || dataSaver ? (
+            <View style={styles.playCircle}>
+              <AppIcon name="play" color={C.textInverse} size={40} />
+            </View>
+          ) : <View />}
+          <View style={[styles.clipBottom, { backgroundColor: C.overlay }]}>
             <AppText variant="headline" tone="inverse" numberOfLines={2}>{item.title}</AppText>
             <AppText variant="caption" tone="inverse" numberOfLines={1} style={{ opacity: 0.78 }}>{item.channelName}</AppText>
           </View>
         </View>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -123,6 +143,13 @@ export default function VideoScreen() {
   const C = isDark ? Colors.dark : Colors.light;
   const { height } = useWindowDimensions();
   const pageHeight = Math.max(520, height - 210);
+  const [activeClipIndex, setActiveClipIndex] = useState(0);
+  const [featuredVideoId, setFeaturedVideoId] = useState<string | null>(null);
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const firstClip = viewableItems.find((token) => typeof token.index === 'number' && token.index >= 0);
+    if (typeof firstClip?.index === 'number') setActiveClipIndex(firstClip.index);
+  }).current;
   const query = useQuery({
     queryKey: ['video-tab-swipe'],
     queryFn: loadVideoTab,
@@ -131,14 +158,33 @@ export default function VideoScreen() {
 
   const clips = query.data?.clips || [];
   const longForm = query.data?.longForm || [];
+  const featuredVideo = useMemo(() => {
+    if (!featuredVideoId) return null;
+    return longForm.find((item) => item.videoId === featuredVideoId) || null;
+  }, [featuredVideoId, longForm]);
 
   const header = useMemo(() => (
     <View style={styles.header}>
       <AppText variant="screenTitle">Video</AppText>
-      <AppText variant="body" tone="secondary">Swipe clips vertically. Long-form and live streams stay up top.</AppText>
+      <AppText variant="body" tone="secondary">Watch inside JanSamachar. Swipe up for the next clip.</AppText>
       {query.data?.fallbackLabel ? (
         <View style={[styles.savedNotice, { backgroundColor: C.surfaceElevated, borderColor: C.border }]}>
           <AppText variant="caption" tone="secondary">{query.data.fallbackLabel}</AppText>
+        </View>
+      ) : null}
+      {featuredVideo?.videoId ? (
+        <View style={[styles.featuredPlayer, { backgroundColor: C.card, borderColor: C.border }]}>
+          <YoutubePlayer
+            height={210}
+            play
+            videoId={featuredVideo.videoId}
+            initialPlayerParams={{ controls: true, modestbranding: true, rel: false }}
+          />
+          <View style={styles.featuredBody}>
+            <Badge label="Playing" tone="video" />
+            <AppText variant="cardTitle" numberOfLines={2}>{featuredVideo.title}</AppText>
+            <AppText variant="caption" tone="muted" numberOfLines={1}>{featuredVideo.channelName}</AppText>
+          </View>
         </View>
       ) : null}
       <SectionHeader title="Long-form and live" eyebrow={query.isFetching ? 'Refreshing' : 'YouTube sources'} />
@@ -146,7 +192,13 @@ export default function VideoScreen() {
         horizontal
         data={longForm}
         keyExtractor={(item, index) => `${item.id}_${index}`}
-        renderItem={({ item }) => <LongFormCard item={item} />}
+        renderItem={({ item }) => (
+          <LongFormCard
+            item={item}
+            selected={Boolean(featuredVideoId && item.videoId === featuredVideoId)}
+            onSelect={() => setFeaturedVideoId(item.videoId || null)}
+          />
+        )}
         showsHorizontalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={{ width: spacing.md }} />}
         contentContainerStyle={{ paddingRight: spacing.lg }}
@@ -161,10 +213,12 @@ export default function VideoScreen() {
       <FlatList
         data={clips}
         keyExtractor={(item, index) => `${item.id}_${index}`}
-        renderItem={({ item }) => <ClipPage item={item} height={pageHeight} />}
+        renderItem={({ item, index }) => <ClipPage item={item} height={pageHeight} active={index === activeClipIndex} />}
         pagingEnabled
         snapToInterval={pageHeight}
         decelerationRate="fast"
+        viewabilityConfig={viewabilityConfig}
+        onViewableItemsChanged={onViewableItemsChanged}
         ListHeaderComponent={header}
         refreshControl={
           <RefreshControl
@@ -205,8 +259,12 @@ const styles = StyleSheet.create({
   clipPage: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   clipFrame: { flex: 1, borderRadius: radius.card, overflow: 'hidden' },
   clipImage: { ...StyleSheet.absoluteFill },
+  youtubeWebView: { backgroundColor: Colors.dark.bgPage },
+  playerFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   clipOverlay: { flex: 1, padding: spacing.lg, justifyContent: 'space-between' },
   clipTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   playCircle: { alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
-  clipBottom: { gap: spacing.xs },
+  clipBottom: { gap: spacing.xs, borderRadius: radius.control, padding: spacing.md, overflow: 'hidden' },
+  featuredPlayer: { borderWidth: 1, borderRadius: radius.card, overflow: 'hidden' },
+  featuredBody: { padding: spacing.md, gap: spacing.xs },
 });

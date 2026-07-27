@@ -5,9 +5,11 @@ import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS, type Language, type ProfessionId } from '@/constants/professions';
 import { spacing } from '@/constants/theme';
 import { getDistrictsForState, getIndiaGeoData, type GeoDistrict, type GeoState } from '@/services/geoService';
+import { configureNewsNotifications } from '@/services/notificationService';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import {
   AppButton,
+  AppIcon,
   AppText,
   Chip,
   JanSamacharLogo,
@@ -15,7 +17,7 @@ import {
   SectionHeader,
 } from '@/components/ui/design-system';
 
-const STEPS = ['Welcome', 'Profession', 'Location', 'Interests', 'Language'];
+const STEPS = ['Welcome', 'Profession', 'Location', 'Interests', 'Language', 'Notifications'];
 const VISIBLE_INTERESTS = INTERESTS.slice(0, 8);
 
 function Progress({ step }: { step: number }) {
@@ -39,6 +41,7 @@ export default function OnboardingScreen() {
   const [districtName, setDistrictName] = useState(profile.districtName);
   const [interests, setInterests] = useState<string[]>(profile.interests);
   const [language, setLanguage] = useState<Language>(profile.language);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(profile.breakingAlerts);
   const [states, setStates] = useState<GeoState[]>([]);
   const [districts, setDistricts] = useState<GeoDistrict[]>([]);
   const [geoLoading, setGeoLoading] = useState(false);
@@ -67,8 +70,8 @@ export default function OnboardingScreen() {
 
   const canContinue = step !== 2 || Boolean(stateId && districtId);
 
-  const finish = () => {
-    setProfile({
+  const finish = async () => {
+    const nextProfile = {
       onboardingDone: true,
       profession,
       stateId,
@@ -77,7 +80,14 @@ export default function OnboardingScreen() {
       districtName,
       interests,
       language,
-    });
+      breakingAlerts: notificationsEnabled,
+      notificationBudgetPerDay: notificationsEnabled ? Math.max(profile.notificationBudgetPerDay, 2) : 0,
+    };
+
+    setProfile(nextProfile);
+    if (notificationsEnabled) {
+      await configureNewsNotifications({ ...profile, ...nextProfile }, { requestPermission: true });
+    }
     router.replace('/(tabs)');
   };
 
@@ -221,6 +231,32 @@ export default function OnboardingScreen() {
             </View>
           </>
         ) : null}
+
+        {step === 5 ? (
+          <View style={[styles.notificationCard, { backgroundColor: C.surface, borderColor: C.border }]}>
+            <View style={[styles.notificationIcon, { backgroundColor: C.coral + '22' }]}>
+              <AppIcon name="bell" color={C.coral} size={28} />
+            </View>
+            <SectionHeader title="Enable news alerts" eyebrow="Morning brief and important local updates" />
+            <AppText variant="body" tone="secondary">
+              Get a daily brief for {districtName || 'your district'} and important updates from trusted local sources.
+            </AppText>
+            <View style={styles.languageStack}>
+              <Chip
+                label="Enable notifications"
+                selected={notificationsEnabled}
+                onPress={() => setNotificationsEnabled(true)}
+                style={styles.languageChip}
+              />
+              <Chip
+                label="Not now"
+                selected={!notificationsEnabled}
+                onPress={() => setNotificationsEnabled(false)}
+                style={styles.languageChip}
+              />
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
 
       <View style={[styles.navBar, { borderTopColor: C.border, backgroundColor: C.background }]}>
@@ -256,5 +292,7 @@ const styles = StyleSheet.create({
   input: { minHeight: 48, fontSize: 15 },
   languageStack: { gap: spacing.sm },
   languageChip: { alignSelf: 'stretch', justifyContent: 'center' },
+  notificationCard: { borderWidth: 1, borderRadius: 22, padding: spacing.xl, gap: spacing.md },
+  notificationIcon: { width: 58, height: 58, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   navBar: { borderTopWidth: 1, padding: spacing.lg, flexDirection: 'row', gap: spacing.md },
 });

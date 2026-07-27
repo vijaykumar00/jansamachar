@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
 import { trackEvent } from '@/services/analyticsService';
+import { configureNewsNotifications, setupNotificationTapHandler } from '@/services/notificationService';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { useEngagementStore } from '@/store/engagementStore';
 
@@ -31,6 +32,27 @@ function NavigationController() {
       router.replace('/onboarding');
     }
   }, [isLoaded, profile.onboardingDone]);
+
+  useEffect(() => {
+    if (!isLoaded || !profile.onboardingDone) return;
+    void configureNewsNotifications(profile);
+  }, [
+    isLoaded,
+    profile.onboardingDone,
+    profile.stateName,
+    profile.districtName,
+    profile.localityName,
+    profile.language,
+    profile.notificationBudgetPerDay,
+    profile.breakingAlerts,
+    profile.interests.join(','),
+  ]);
+
+  useEffect(() => {
+    return setupNotificationTapHandler((screen) => {
+      router.push(screen as any);
+    });
+  }, []);
 
   return null;
 }

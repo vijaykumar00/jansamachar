@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -31,6 +31,7 @@ import {
   SkeletonBlock,
 } from '@/components/ui/design-system';
 import { openExternalUrl } from '@/services/linkService';
+import { checkAndNotifyNewNews } from '@/services/notificationService';
 
 type FeedEntry = { type: 'story'; id: string; item: NewsCardItem; variant: NewsCardVariant };
 type HomeFeedResult = {
@@ -352,6 +353,10 @@ export default function HomeScreen() {
     () => flattenSections(query.data?.sections || [], filter),
     [filter, query.data?.sections]
   );
+  const notificationItems = useMemo(
+    () => flattenSections(query.data?.sections || [], 'all'),
+    [query.data?.sections]
+  );
   const breakingItem = useMemo(
     () => flatItems.find(isBreakingStory),
     [flatItems]
@@ -366,6 +371,22 @@ export default function HomeScreen() {
   );
   const returnItems = historyItems.length > 0 ? historyItems.slice(0, 5) : savedItems.slice(0, 5);
   const returnMode = historyItems.length > 0 ? 'history' : 'saved';
+
+  useEffect(() => {
+    if (!profile.breakingAlerts || notificationItems.length === 0) return;
+    const latest = notificationItems.slice(0, Math.max(1, Math.min(profile.notificationBudgetPerDay, 6)));
+    void checkAndNotifyNewNews(
+      profile.districtName || profile.stateName || 'your area',
+      latest.map((item) => item.id),
+      latest.map((item) => item.title)
+    );
+  }, [
+    notificationItems,
+    profile.breakingAlerts,
+    profile.districtName,
+    profile.notificationBudgetPerDay,
+    profile.stateName,
+  ]);
 
   return (
     <Screen>

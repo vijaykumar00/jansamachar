@@ -1,34 +1,23 @@
-// JanSamachar — Push Notification Service
-// Daily news digest at 8 AM + breaking news alerts for user's district
-
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import type { UserProfile } from '../store/userProfileStore';
 
-// Configure how notifications appear when app is in foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+type NotificationsApi = typeof import('expo-notifications');
+type DeviceApi = typeof import('expo-device');
+type ConstantsApi = typeof import('expo-constants');
 
 const PUSH_TOKEN_KEY = 'jansamachar_push_token';
 const LAST_NOTIF_KEY = 'jansamachar_last_notif_ids';
+const SCHEDULE_KEY = 'jansamachar_notification_schedule_v1';
 
-/**
- * Request notification permission and get Expo push token.
- * Must be called on a real device (not emulator).
- */
+let notificationsApi: NotificationsApi | null | undefined;
+let deviceApi: DeviceApi | null | undefined;
+let constantsApi: ConstantsApi | null | undefined;
+let notificationHandlerConfigured = false;
+
 export async function requestNotificationPermission(): Promise<string | null> {
-  if (!Device.isDevice) {
-    console.log('[Notifications] Push notifications require a real device');
-    return null;
-  }
+  const Notifications = await getNotifications();
+  if (!Notifications) return null;
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
@@ -38,43 +27,65 @@ export async function requestNotificationPermission(): Promise<string | null> {
     finalStatus = status;
   }
 
-  if (finalStatus !== 'granted') {
-    console.log('[Notifications] Permission denied');
-    return null;
-  }
+  if (finalStatus !== 'granted') return null;
+
+  if (!(await canRegisterExpoPushToken())) return 'local-permission-granted';
 
   try {
     const tokenData = await Notifications.getExpoPushTokenAsync();
-    const token = tokenData.data;
-    await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
-    console.log('[Notifications] Push token:', token);
-    return token;
+    await AsyncStorage.setItem(PUSH_TOKEN_KEY, tokenData.data);
+    return tokenData.data;
   } catch (e) {
     console.warn('[Notifications] Failed to get push token:', e);
-    return null;
+    return 'local-permission-granted';
   }
 }
 
-/**
- * Schedule a daily morning news digest notification at 8:00 AM.
- * Cancels any existing digest before scheduling a new one.
- */
+export async function configureNewsNotifications(
+  profile: UserProfile,
+  options: { requestPermission?: boolean } = {}
+): Promise<void> {
+  if (!profile.breakingAlerts || profile.notificationBudgetPerDay <= 0) {
+    await cancelNewsNotifications();
+    return;
+  }
+
+  const hasPermission = options.requestPermission
+    ? Boolean(await requestNotificationPermission())
+    : await notificationPermissionGranted();
+
+  if (!hasPermission) return;
+
+  const scheduleKey = [
+    profile.stateName,
+    profile.districtName,
+    profile.localityName || '',
+    profile.language,
+    profile.notificationBudgetPerDay,
+    profile.interests.slice(0, 3).join(','),
+  ].join('|');
+
+  const lastScheduleKey = await AsyncStorage.getItem(SCHEDULE_KEY);
+  if (lastScheduleKey === scheduleKey) return;
+
+  await scheduleDailyDigest(profile);
+  await AsyncStorage.setItem(SCHEDULE_KEY, scheduleKey);
+}
+
 export async function scheduleDailyDigest(profile: UserProfile): Promise<void> {
-  // Cancel old daily digest if exists
+  const Notifications = await getNotifications();
+  if (!Notifications) return;
+
   await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const title = `📰 ${profile.districtName} की आज की खबरें`;
-  const body = [
-    profile.stateName + ' और राष्ट्रीय समाचार तैयार हैं।',
-    `आपकी पसंद: ${profile.interests.slice(0, 2).join(', ')}`,
-    'खबरें देखने के लिए टैप करें।',
-  ].join(' ');
+  const place = profile.localityName || profile.districtName || profile.stateName || 'your area';
+  const interestText = profile.interests.slice(0, 2).join(', ') || 'local updates';
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      title,
-      body,
-      data: { screen: '/(tabs)', section: 'district' },
+      title: `${place} morning news brief`,
+      body: `Latest local, state, and national updates are ready. Focus: ${interestText}.`,
+      data: { screen: '/(tabs)', section: 'district', source: 'daily_digest' },
       sound: true,
     },
     trigger: {
@@ -84,43 +95,44 @@ export async function scheduleDailyDigest(profile: UserProfile): Promise<void> {
     },
   });
 
-  // Also schedule an evening update at 6 PM
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: `🌆 ${profile.districtName} — शाम की खबरें`,
-      body: `${profile.stateName} की ताज़ा अपडेट। देखें क्या हुआ आज।`,
-      data: { screen: '/(tabs)', section: 'state' },
-      sound: false, // silent evening notification
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: 18,
-      minute: 0,
-    },
-  });
-
-  console.log(`[Notifications] Daily digest scheduled for ${profile.districtName}`);
+  if (profile.notificationBudgetPerDay >= 2) {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `${place} evening update`,
+        body: `Catch up on important stories from ${profile.stateName || 'your state'} before the day ends.`,
+        data: { screen: '/(tabs)', section: 'state', source: 'evening_digest' },
+        sound: false,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 18,
+        minute: 0,
+      },
+    });
+  }
 }
 
-/**
- * Send an immediate breaking news notification for the user's district.
- */
+export async function cancelNewsNotifications(): Promise<void> {
+  const Notifications = await getNotifications();
+  if (Notifications) await Notifications.cancelAllScheduledNotificationsAsync();
+  await AsyncStorage.removeItem(SCHEDULE_KEY);
+}
+
 export async function sendBreakingAlert(headline: string, districtName: string): Promise<void> {
+  const Notifications = await getNotifications();
+  if (!Notifications || !(await notificationPermissionGranted())) return;
+
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: `🔴 Breaking: ${districtName}`,
+      title: `Breaking: ${districtName}`,
       body: headline,
-      data: { screen: '/(tabs)', section: 'district' },
+      data: { screen: '/(tabs)', section: 'district', source: 'breaking_alert' },
       sound: true,
     },
-    trigger: null, // immediate
+    trigger: null,
   });
 }
 
-/**
- * Check for new news items and notify if found.
- * Compare against last-seen IDs stored in AsyncStorage.
- */
 export async function checkAndNotifyNewNews(
   districtName: string,
   latestIds: string[],
@@ -130,31 +142,120 @@ export async function checkAndNotifyNewNews(
     const stored = await AsyncStorage.getItem(LAST_NOTIF_KEY);
     const lastIds: string[] = stored ? JSON.parse(stored) : [];
 
-    const newIds = latestIds.filter(id => !lastIds.includes(id));
+    if (lastIds.length === 0) {
+      await AsyncStorage.setItem(LAST_NOTIF_KEY, JSON.stringify(latestIds));
+      return;
+    }
+
+    const newIds = latestIds.filter((id) => !lastIds.includes(id));
 
     if (newIds.length > 0 && latestTitles[0]) {
       await sendBreakingAlert(latestTitles[0], districtName);
     }
 
-    // Save current IDs as last seen
     await AsyncStorage.setItem(LAST_NOTIF_KEY, JSON.stringify(latestIds));
   } catch (e) {
     console.warn('[Notifications] checkAndNotify error:', e);
   }
 }
 
-/**
- * Handle notification tap — navigate to correct screen.
- * Call this in the root _layout.tsx
- */
 export function setupNotificationTapHandler(
   onNavigate: (screen: string, params?: Record<string, unknown>) => void
 ): () => void {
-  const sub = Notifications.addNotificationResponseReceivedListener(response => {
-    const data = response.notification.request.content.data;
-    if (data?.screen) {
-      onNavigate(String(data.screen), data);
-    }
+  let cancelled = false;
+  let removeListener: (() => void) | null = null;
+
+  void getNotifications().then((Notifications) => {
+    if (!Notifications || cancelled) return;
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.screen) onNavigate(String(data.screen), data);
+    });
+    removeListener = () => sub.remove();
   });
-  return () => sub.remove();
+
+  return () => {
+    cancelled = true;
+    removeListener?.();
+  };
+}
+
+async function notificationPermissionGranted(): Promise<boolean> {
+  const Notifications = await getNotifications();
+  if (!Notifications) return false;
+  const { status } = await Notifications.getPermissionsAsync();
+  return status === 'granted';
+}
+
+async function getNotifications(): Promise<NotificationsApi | null> {
+  if (notificationsApi !== undefined) return notificationsApi;
+
+  try {
+    if (Platform.OS === 'web' || await isExpoGoRuntime()) {
+      notificationsApi = null;
+      return null;
+    }
+
+    const module = await import('expo-notifications');
+    notificationsApi = module;
+    configureNotificationHandler(module);
+    return module;
+  } catch (e) {
+    console.warn('[Notifications] Module unavailable:', e);
+    notificationsApi = null;
+    return null;
+  }
+}
+
+async function isExpoGoRuntime(): Promise<boolean> {
+  const Constants = await getConstants();
+  const constants = Constants?.default;
+  return constants?.appOwnership === 'expo' || constants?.executionEnvironment === 'storeClient';
+}
+
+async function getDevice(): Promise<DeviceApi | null> {
+  if (deviceApi !== undefined) return deviceApi;
+
+  try {
+    deviceApi = await import('expo-device');
+    return deviceApi;
+  } catch {
+    deviceApi = null;
+    return null;
+  }
+}
+
+async function getConstants(): Promise<ConstantsApi | null> {
+  if (constantsApi !== undefined) return constantsApi;
+
+  try {
+    constantsApi = await import('expo-constants');
+    return constantsApi;
+  } catch {
+    constantsApi = null;
+    return null;
+  }
+}
+
+async function canRegisterExpoPushToken(): Promise<boolean> {
+  const [Device, Constants] = await Promise.all([getDevice(), getConstants()]);
+  if (!Device?.isDevice) return false;
+
+  const constants = Constants?.default;
+  return constants?.appOwnership !== 'expo' && constants?.executionEnvironment !== 'storeClient';
+}
+
+function configureNotificationHandler(Notifications: NotificationsApi) {
+  if (notificationHandlerConfigured) return;
+  notificationHandlerConfigured = true;
+
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
 }

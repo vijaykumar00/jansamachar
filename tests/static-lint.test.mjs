@@ -211,3 +211,35 @@ test('local YouTube source registry has real scoped sources and no placeholder I
   assert.match(localChannelService, /fetchChannelVideos/);
   assert.match(personalization, /fetchLocalChannelNews\(district, state, 5, locality\)/);
 });
+
+test('Video tab embeds YouTube playback instead of redirecting clips externally', () => {
+  const live = read('app/(tabs)/live.tsx');
+  assert.match(live, /react-native-youtube-iframe/);
+  assert.match(live, /<YoutubePlayer/);
+  assert.match(live, /pagingEnabled/);
+  assert.match(live, /onViewableItemsChanged/);
+  assert.doesNotMatch(live, /openExternalUrl/);
+});
+
+test('onboarding and root layout configure news notifications', () => {
+  const onboarding = read('app/onboarding.tsx');
+  const layout = read('app/_layout.tsx');
+  const notifications = read('services/notificationService.ts');
+
+  assert.match(onboarding, /Notifications/);
+  assert.match(onboarding, /configureNewsNotifications/);
+  assert.match(layout, /setupNotificationTapHandler/);
+  assert.match(layout, /configureNewsNotifications\(profile\)/);
+  assert.match(notifications, /requestNotificationPermission/);
+  assert.match(notifications, /scheduleDailyDigest/);
+  assert.match(notifications, /checkAndNotifyNewNews/);
+  assert.match(notifications, /lastIds\.length === 0/);
+  assert.doesNotMatch(notifications, /import \* as Notifications from 'expo-notifications'/);
+  assert.doesNotMatch(notifications, /import \* as Device from 'expo-device'/);
+  assert.match(notifications, /await import\('expo-notifications'\)/);
+  assert.match(notifications, /canRegisterExpoPushToken/);
+  assert.match(notifications, /isExpoGoRuntime/);
+  assert.match(notifications, /Platform\.OS === 'web'/);
+  assert.match(notifications, /if \(Platform\.OS === 'web' \|\| await isExpoGoRuntime\(\)\)/);
+  assert.match(notifications, /appOwnership !== 'expo'/);
+});
