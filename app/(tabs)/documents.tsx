@@ -6,7 +6,6 @@ import { radius, spacing } from '@/constants/theme';
 import { getIndiaGeoData, type GeoDistrict, type GeoState } from '@/services/geoService';
 import { fetchDistrictNews, fetchStateNews, toNewsItem } from '@/services/newsDataService';
 import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
-import { MOCK_DOCUMENTS, MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { getCitizenNewsItems } from '@/services/supabaseService';
 import { openExternalUrl } from '@/services/linkService';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
@@ -24,8 +23,20 @@ import {
   SectionHeader,
 } from '@/components/ui/design-system';
 
-type Document = (typeof MOCK_DOCUMENTS)[0];
-type LocalRow = { type: 'story'; id: string; item: NewsCardItem } | { type: 'doc'; id: string; doc: Document };
+type CivicDocument = {
+  id: string;
+  title: string;
+  ministry: string;
+  summary: string;
+  type: string;
+  language: 'hi' | 'en' | 'both';
+  category: string;
+  date: string;
+  url: string;
+};
+type LocalRow = { type: 'story'; id: string; item: NewsCardItem } | { type: 'doc'; id: string; doc: CivicDocument };
+
+const LIVE_DOCUMENTS: CivicDocument[] = [];
 
 const CATEGORIES = [
   { id: 'all', label: 'All' },
@@ -62,22 +73,14 @@ async function loadLocalStories(profile: ReturnType<typeof useProfileStore.getSt
     sourceType: 'citizen_report' as const,
   }));
 
-  const fallback = MOCK_NEWS_ITEMS
-    .filter((item) => ['state', 'accountability', 'fact_check'].includes(item.category || ''))
-    .map((item, index) => ({
-      ...item,
-      category: item.category || 'state',
-      sourceType: index % 4 === 0 ? 'citizen_report' as const : 'verified_publisher' as const,
-    }));
-
   const combined = [...publisherItems, ...citizenItems];
   return {
-    items: combined.length > 0 ? combined.slice(0, 14) : fallback.slice(0, 8),
+    items: combined.slice(0, 14),
     fallbackLabel: combined.length === 0 ? fallbackLabel(createFallbackMeta('empty_response', 'local sources')) : '',
   };
 }
 
-function DocumentCard({ doc }: { doc: Document }) {
+function DocumentCard({ doc }: { doc: CivicDocument }) {
   const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
     <Pressable
@@ -123,7 +126,7 @@ export default function LocalScreen() {
   });
 
   const documents = useMemo(() => {
-    return MOCK_DOCUMENTS.filter((doc) => {
+    return LIVE_DOCUMENTS.filter((doc) => {
       const matchesCategory = category === 'all' || doc.category === category;
       const haystack = `${doc.title} ${doc.ministry} ${doc.summary}`.toLowerCase();
       return matchesCategory && haystack.includes(search.trim().toLowerCase());

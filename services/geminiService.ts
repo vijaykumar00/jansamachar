@@ -1,4 +1,4 @@
-import { API_CONFIG, DEMO_MODE } from '../constants/api';
+import { API_CONFIG } from '../constants/api';
 import { fetchWithTimeout } from './fetchService';
 import { hasBackendProxy, postProxyJson } from './proxyClient';
 
@@ -64,8 +64,6 @@ export async function summarizeNews(
   description: string,
   language: 'hi' | 'en' | 'both' = 'both'
 ): Promise<string> {
-  if (DEMO_MODE) return getDemoSummary(language);
-
   const langInstruction =
     language === 'hi'
       ? 'Respond only in Hindi using Devanagari script.'
@@ -90,13 +88,11 @@ Description: ${description}`;
     return await callGemini(prompt, 400);
   } catch (err) {
     console.warn('Gemini summarize failed:', err);
-    return getDemoSummary(language);
+    return unavailableSummary(language);
   }
 }
 
 export async function translateNews(text: string, targetLang: string): Promise<string> {
-  if (DEMO_MODE) return text;
-
   const langNames: Record<string, string> = {
     hi: 'Hindi',
     ta: 'Tamil',
@@ -120,12 +116,6 @@ export async function translateNews(text: string, targetLang: string): Promise<s
 }
 
 export async function explainDocument(documentText: string, language: 'hi' | 'en' = 'hi'): Promise<string> {
-  if (DEMO_MODE) {
-    return language === 'hi'
-      ? '• यह दस्तावेज सरकारी नीति से जुड़ा है\n• इसका असर आम नागरिकों पर पड़ सकता है\n• पुष्टि के लिए मूल स्रोत या RTI देखें'
-      : '• This document relates to government policy\n• It may affect ordinary citizens\n• Check the original source or file an RTI for more detail';
-  }
-
   const langInstruction = language === 'hi' ? 'Respond in Hindi using Devanagari script.' : 'Respond in English.';
 
   try {
@@ -146,13 +136,6 @@ Document excerpt: ${documentText.substring(0, 1000)}`,
 }
 
 export async function factCheck(claim: string): Promise<{ verdict: string; explanation: string }> {
-  if (DEMO_MODE) {
-    return {
-      verdict: 'UNVERIFIED',
-      explanation: 'AI fact-checking requires Gemini API configuration. Verify this claim with trusted fact-check sources.',
-    };
-  }
-
   try {
     const response = await callGemini(
       `Fact-check this claim for an Indian audience:
@@ -170,15 +153,15 @@ EXPLANATION: 2 short sentences with context.`,
       explanation: explanationMatch?.[1]?.trim() || response,
     };
   } catch {
-    return { verdict: 'ERROR', explanation: 'Fact check failed. Please try again.' };
+    return {
+      verdict: 'UNVERIFIED',
+      explanation: 'AI fact-checking is unavailable right now. Verify this claim with trusted fact-check sources.',
+    };
   }
 }
 
-function getDemoSummary(language: 'hi' | 'en' | 'both'): string {
-  const hi = '• यह खबर सार्वजनिक हित से जुड़ी है\n• इसका असर आम नागरिकों पर पड़ सकता है\n• पुष्टि के लिए मूल स्रोत जरूर देखें';
-  const en = '• This story relates to public interest\n• It may affect ordinary citizens\n• Check the original source before acting on it';
-
-  if (language === 'hi') return hi;
-  if (language === 'en') return en;
-  return `${hi}\n\n${en}`;
+function unavailableSummary(language: 'hi' | 'en' | 'both'): string {
+  const message = 'AI summary is unavailable until Gemini API is configured.';
+  if (language === 'both') return `${message}\n\n${message}`;
+  return message;
 }

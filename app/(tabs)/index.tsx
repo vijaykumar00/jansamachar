@@ -17,7 +17,6 @@ import { type EngagementStory, useEngagementStore } from '@/store/engagementStor
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { buildPersonalizedFeed, getGreeting, type FeedSection } from '@/services/personalizationService';
 import { searchYouTubeNews } from '@/services/youtubeSearchService';
-import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
 import AnimatedNewsCard, { type NewsCardItem, type NewsCardVariant } from '@/components/AnimatedNewsCard';
 import {
@@ -51,19 +50,6 @@ const FILTERS = [
 ];
 
 let lastSuccessfulHomeFeed: HomeFeedResult | null = null;
-
-function toFallbackSections(): FeedSection[] {
-  return [
-    {
-      id: 'national',
-      title: 'Top stories',
-      titleHi: 'Top stories',
-      emoji: 'IN',
-      items: MOCK_NEWS_ITEMS,
-      geoLevel: 'national',
-    },
-  ];
-}
 
 function formatRelative(dateStr?: string): string {
   if (!dateStr) return 'recently';
@@ -214,7 +200,7 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       searchYouTubeNews('India breaking news today', 5),
     ]);
     const hasStories = sections.some((section) => section.items.length > 0);
-    const normalizedSections = normalizeSectionItems(hasStories ? sections : toFallbackSections());
+    const normalizedSections = normalizeSectionItems(sections);
     const breakingItems = breakingVideos.map((item) => ({
       id: `breaking_${item.videoId}`,
       title: item.title,
@@ -228,18 +214,19 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       trustLevel: 'breaking',
       category: 'breaking',
     })) as NewsCardItem[];
+    const hasAnyStories = hasStories || breakingItems.length > 0;
 
-    const result = {
+    const result: HomeFeedResult = {
       sections: normalizeSectionItems([
         { id: 'breaking', title: 'Breaking', titleHi: 'Breaking', emoji: '!', items: breakingItems as any, geoLevel: 'national' },
         ...normalizedSections,
       ].filter((section) => section.items.length > 0) as FeedSection[]),
       fetchedAt: new Date().toISOString(),
-      isFallback: !hasStories,
-      fallbackLabel: !hasStories ? fallbackLabel(createFallbackMeta('empty_response', 'home feed')) : undefined,
+      isFallback: !hasAnyStories,
+      fallbackLabel: !hasAnyStories ? fallbackLabel(createFallbackMeta('empty_response', 'home feed')) : undefined,
     };
 
-    if (hasStories) lastSuccessfulHomeFeed = result;
+    if (hasAnyStories) lastSuccessfulHomeFeed = result;
     return result;
   } catch {
     const saved = lastSuccessfulHomeFeed;
@@ -253,7 +240,7 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
 
     const fetchedAt = new Date().toISOString();
     return {
-      sections: normalizeSectionItems(toFallbackSections()),
+      sections: [],
       fetchedAt,
       isFallback: true,
       fallbackLabel: fallbackLabel({ reason: 'provider_error', provider: 'home feed', fetchedAt }),

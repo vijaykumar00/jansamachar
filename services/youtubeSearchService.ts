@@ -85,7 +85,7 @@ export async function searchYouTubeNews(
         void trackEvent('provider_fallback_used', { provider: 'youtube', reason: 'quota_exhausted' });
         if (!youtubeQuotaNoticeShown) {
           youtubeQuotaNoticeShown = true;
-          console.info('YouTube quota exhausted for this session; using saved/mock video fallback.');
+          console.info('YouTube quota exhausted for this session; showing available cached video results only.');
         }
         return [];
       }
@@ -111,7 +111,7 @@ export async function searchYouTubeNews(
     return items;
   } catch (e) {
     void trackEvent('provider_fallback_used', { provider: 'youtube', reason: 'provider_error' });
-    console.warn('YouTube Search fetch failed. Using saved/mock video fallback.');
+    console.warn('YouTube Search fetch failed. Showing available cached video results only.');
     return [];
   }
 }

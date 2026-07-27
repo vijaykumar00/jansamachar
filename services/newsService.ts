@@ -2,8 +2,7 @@
 // Fetches latest videos from trusted Indian independent channels
 
 import { TRUSTED_YOUTUBE_CHANNELS, YOUTUBE_API_BASE } from '../constants/sources';
-import { API_CONFIG, DEMO_MODE } from '../constants/api';
-import { MOCK_NEWS_ITEMS } from './mockData';
+import { API_CONFIG } from '../constants/api';
 import { fetchWithTimeout } from './fetchService';
 
 export interface NewsItem {
@@ -153,11 +152,6 @@ function mapChannelTypeToCategory(type: string): string {
  * Main function: fetch news from all sources
  */
 export async function fetchAllNews(): Promise<NewsItem[]> {
-  if (DEMO_MODE) {
-    // Return mock data in demo mode (works without API keys)
-    return MOCK_NEWS_ITEMS;
-  }
-
   const promises: Promise<NewsItem[]>[] = [];
 
   // Fetch from top 5 YouTube channels (to stay within quota)
@@ -192,17 +186,13 @@ export async function fetchAllNews(): Promise<NewsItem[]> {
 
 export async function fetchNewsItemById(id: string): Promise<NewsItem | null> {
   const allNews = await fetchAllNews();
-  return allNews.find((item) => item.id === id) || MOCK_NEWS_ITEMS.find((item) => item.id === id) || null;
+  return allNews.find((item) => item.id === id) || null;
 }
 
 /**
  * Fetch breaking news (uses NewsAPI)
  */
 export async function fetchBreakingNews(): Promise<NewsItem[]> {
-  if (DEMO_MODE) {
-    return MOCK_NEWS_ITEMS.filter((_, i) => i < 5);
-  }
-
   if (!API_CONFIG.NEWS_API_KEY || API_CONFIG.NEWS_API_KEY === 'YOUR_NEWS_API_KEY') {
     return [];
   }

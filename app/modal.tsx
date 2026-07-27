@@ -18,7 +18,6 @@ import { trackEvent } from '@/services/analyticsService';
 import { factCheck, summarizeNews } from '@/services/geminiService';
 import { createFallbackMeta, fallbackLabel as fallbackLabelText } from '@/services/fallbackService';
 import { openExternalUrl } from '@/services/linkService';
-import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { fetchNewsItemById, type NewsItem } from '@/services/newsService';
 import { type EngagementStory, useEngagementStore } from '@/store/engagementStore';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
@@ -58,19 +57,27 @@ function toEngagementStory(article: NewsItem): EngagementStory {
 }
 
 function routeFallbackArticle(params: ReturnType<typeof useLocalSearchParams>): NewsItem {
-  const fallback = MOCK_NEWS_ITEMS[0];
+  const routeTitle = asString(params.title);
+  const routeId =
+    asString(params.id) ||
+    `route_${(routeTitle || 'article').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40)}`;
+
   return {
-    ...fallback,
-    id: asString(params.id) || fallback.id,
-    title: asString(params.title) || fallback.title,
-    description: asString(params.description) || fallback.description,
-    channelName: asString(params.source) || fallback.channelName,
-    publishedAt: asString(params.publishedAt) || fallback.publishedAt,
-    url: asString(params.url) || fallback.url || '',
-    thumbnailUrl: asString(params.thumbnailUrl) || fallback.thumbnailUrl,
-    trustLevel: (asString(params.trustLevel) || fallback.trustLevel) as NewsItem['trustLevel'],
-    category: asString(params.category) || fallback.category || '',
-    aiSummary: asString(params.aiSummary) || fallback.aiSummary || '',
+    id: routeId,
+    title: routeTitle || 'Story unavailable',
+    description: asString(params.description),
+    channelName: asString(params.source) || 'Unknown source',
+    channelId: '',
+    channelType: 'publisher',
+    language: 'en',
+    source: 'rss',
+    trustLevel: (asString(params.trustLevel) || 'verified') as NewsItem['trustLevel'],
+    publishedAt: asString(params.publishedAt) || new Date().toISOString(),
+    url: asString(params.url),
+    thumbnailUrl: asString(params.thumbnailUrl),
+    category: asString(params.category),
+    aiSummary: asString(params.aiSummary),
+    hasDoc: false,
   };
 }
 

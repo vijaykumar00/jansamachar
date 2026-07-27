@@ -29,6 +29,3 @@ export const API_CONFIG = {
   // Agora.io — live streaming (10,000 free min/month)
   AGORA_APP_ID: process.env.EXPO_PUBLIC_AGORA_APP_ID ?? '',
 };
-
-// App mode — set EXPO_PUBLIC_DEMO_MODE=true in .env.local for offline testing
-export const DEMO_MODE = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';

@@ -4,7 +4,6 @@ import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
-import { MOCK_LIVE_STREAMS, MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
 import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
@@ -31,33 +30,20 @@ async function loadVideoTab() {
   const clipItems = clips.status === 'fulfilled' ? clips.value.map(ytSearchToNewsItem) : [];
   const longItems = longForm.status === 'fulfilled' ? longForm.value.map(ytSearchToNewsItem) : [];
 
-  const fallbackClips = MOCK_NEWS_ITEMS.filter((item) => item.videoId || item.source === 'youtube');
-  const fallbackLongForm = MOCK_LIVE_STREAMS.map((stream): LongFormItem => ({
-    id: stream.id,
-    title: stream.title,
-    channelName: stream.streamer,
-    thumbnailUrl: stream.thumbnail,
-    url: 'https://youtube.com',
-    isLive: stream.isLive,
-    viewers: stream.viewers,
-  }));
-
   const usingFallback = clipItems.length === 0 && longItems.length === 0;
 
   return {
-    clips: (clipItems.length > 0 ? clipItems : fallbackClips).map((item, index): NewsCardItem => ({
+    clips: clipItems.map((item, index): NewsCardItem => ({
       ...item,
       duration: index % 3 === 0 ? '0:45' : index % 3 === 1 ? '1:20' : '2:10',
     })),
-    longForm: longItems.length > 0
-      ? longItems.map((item): LongFormItem => ({
-          id: item.id,
-          title: item.title,
-          channelName: item.channelName,
-          thumbnailUrl: item.thumbnailUrl || '',
-          url: item.url || 'https://youtube.com',
-        }))
-      : fallbackLongForm,
+    longForm: longItems.map((item): LongFormItem => ({
+      id: item.id,
+      title: item.title,
+      channelName: item.channelName,
+      thumbnailUrl: item.thumbnailUrl || '',
+      url: item.url || 'https://youtube.com',
+    })),
     fallbackLabel: usingFallback ? fallbackLabel(createFallbackMeta('empty_response', 'video sources')) : '',
   };
 }

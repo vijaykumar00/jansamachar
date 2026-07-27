@@ -186,3 +186,12 @@ test('low-risk provider dedupe caches and sync contracts exist', () => {
   assert.match(read('services/syncContracts.ts'), /EngagementSyncRecord/);
   assert.match(read('services/syncContracts.ts'), /buildEngagementSyncSnapshot/);
 });
+
+test('runtime news surfaces do not use mock data or demo mode', () => {
+  const appSource = sourceDirs.flatMap(sourceFiles).map(read).join('\n');
+  assert.ok(!existsSync(join(root, 'services/mockData.ts')), 'mockData service should not exist in runtime source');
+  assert.doesNotMatch(appSource, /MOCK_[A-Z0-9_]+/);
+  assert.doesNotMatch(appSource, /from ['"].*mockData['"]/);
+  assert.doesNotMatch(appSource, /DEMO_MODE/);
+  assert.doesNotMatch(read('.env.example'), /EXPO_PUBLIC_DEMO_MODE/);
+});

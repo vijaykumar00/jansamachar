@@ -8,7 +8,6 @@ import { radius, spacing } from '@/constants/theme';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { trackEvent } from '@/services/analyticsService';
 import { fetchNewsByQuery, toNewsItem } from '@/services/newsDataService';
-import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
 import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
@@ -38,26 +37,18 @@ async function loadSearchResults(query: string) {
 
   const liveStories = articles.status === 'fulfilled' ? articles.value.map(toNewsItem) : [];
   const liveVideos = videos.status === 'fulfilled' ? videos.value.map(ytSearchToNewsItem) : [];
-  const fallback = MOCK_NEWS_ITEMS.filter((item) => {
-    const haystack = `${item.title} ${item.channelName} ${item.description} ${item.category}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
-
   const usingFallback = liveStories.length === 0 && liveVideos.length === 0;
 
   return {
-    articles: liveStories.length > 0 ? liveStories : fallback.filter((item) => item.source !== 'youtube'),
-    videos: liveVideos.length > 0 ? liveVideos : fallback.filter((item) => item.source === 'youtube' || item.videoId),
+    articles: liveStories,
+    videos: liveVideos,
     fallbackLabel: usingFallback ? fallbackLabel(createFallbackMeta('empty_response', 'search providers')) : '',
   };
 }
 
 async function loadCurrentAffairs() {
   const articles = await fetchNewsByQuery('current affairs UPSC India today', 'hi,en', 6);
-  const mapped = articles.map(toNewsItem);
-  return mapped.length > 0
-    ? mapped
-    : MOCK_NEWS_ITEMS.filter((item) => ['politics', 'economy', 'accountability', 'fact_check'].includes(item.category || '')).slice(0, 4);
+  return articles.map(toNewsItem);
 }
 
 export default function SearchScreen() {
@@ -230,9 +221,13 @@ export default function SearchScreen() {
                   Exam-focused headlines across policy, economy, courts, science, and governance.
                 </AppText>
                 <View style={styles.collectionLinks}>
-                  {(item.articles.length > 0 ? item.articles : MOCK_NEWS_ITEMS.slice(0, 3)).slice(0, 3).map((story) => (
-                    <AppText key={story.id} variant="caption" tone="muted" numberOfLines={1}>- {story.title}</AppText>
-                  ))}
+                  {item.articles.length > 0 ? (
+                    item.articles.slice(0, 3).map((story) => (
+                      <AppText key={story.id} variant="caption" tone="muted" numberOfLines={1}>- {story.title}</AppText>
+                    ))
+                  ) : (
+                    <AppText variant="caption" tone="muted">No live current-affairs items yet.</AppText>
+                  )}
                 </View>
               </Pressable>
             );
