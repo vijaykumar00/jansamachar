@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   StatusBar,
@@ -17,6 +16,7 @@ import { Colors } from '@/constants/colors';
 import { radius, spacing, typography } from '@/constants/theme';
 import { AppButton, AppText, Badge, BottomSheet, IconButton, Screen } from '@/components/ui/design-system';
 import { factCheck, summarizeNews } from '@/services/geminiService';
+import { openExternalUrl } from '@/services/linkService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { fetchNewsItemById, type NewsItem } from '@/services/newsService';
 import { useProfileStore } from '@/store/userProfileStore';
@@ -226,7 +226,7 @@ export default function ModalScreen() {
           </Text>
 
           {article.url ? (
-            <AppButton label="Open original source" onPress={() => Linking.openURL(article.url || '')} />
+            <AppButton label="Open original source" onPress={() => openExternalUrl(article.url || '')} />
           ) : null}
         </View>
       </ScrollView>
@@ -240,11 +240,11 @@ export default function ModalScreen() {
         {sheetMode === 'share' ? (
           <View style={styles.sheetStack}>
             <AppText variant="body" tone="secondary">{article.title}</AppText>
-            <AppButton label="Open link" onPress={() => article.url && Linking.openURL(article.url)} />
+            <AppButton label="Open link" onPress={() => openExternalUrl(article.url || '')} />
             <AppButton
               label="Share to WhatsApp"
               variant="secondary"
-              onPress={() => Linking.openURL(`whatsapp://send?text=${encodeURIComponent(`${article.title}\n\n${article.url || 'JanSamachar'}`)}`)}
+              onPress={() => openExternalUrl(`whatsapp://send?text=${encodeURIComponent(`${article.title}\n\n${article.url || 'JanSamachar'}`)}`)}
             />
           </View>
         ) : null}

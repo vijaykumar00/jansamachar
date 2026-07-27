@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
-import { FlatList, Linking, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { MOCK_LIVE_STREAMS, MOCK_NEWS_ITEMS } from '@/services/mockData';
+import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
 import { AppText, Badge, EmptyState, IconButton, LoadingState, Screen, SectionHeader } from '@/components/ui/design-system';
 import type { NewsCardItem } from '@/components/AnimatedNewsCard';
@@ -71,7 +72,7 @@ function LongFormCard({ item }: { item: LongFormItem }) {
   return (
     <Pressable
       accessibilityRole="link"
-      onPress={() => Linking.openURL(item.url)}
+      onPress={() => openExternalUrl(item.url)}
       style={({ pressed }) => [
         styles.longCard,
         { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
@@ -101,7 +102,7 @@ function ClipPage({ item, height }: { item: NewsCardItem; height: number }) {
   return (
     <Pressable
       accessibilityRole="link"
-      onPress={() => Linking.openURL(item.url || 'https://youtube.com')}
+      onPress={() => openExternalUrl(item.url || 'https://youtube.com')}
       style={[styles.clipPage, { height, backgroundColor: C.background }]}
     >
       <View style={[styles.clipFrame, { backgroundColor: C.secondary }]}>

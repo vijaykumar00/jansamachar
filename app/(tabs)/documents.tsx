@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Linking, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
@@ -7,6 +7,7 @@ import { getIndiaGeoData, type GeoDistrict, type GeoState } from '@/services/geo
 import { fetchDistrictNews, fetchStateNews, toNewsItem } from '@/services/newsDataService';
 import { MOCK_DOCUMENTS, MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { getCitizenNewsItems } from '@/services/supabaseService';
+import { openExternalUrl } from '@/services/linkService';
 import { useProfileStore } from '@/store/userProfileStore';
 import AnimatedNewsCard, { type NewsCardItem } from '@/components/AnimatedNewsCard';
 import {
@@ -80,7 +81,7 @@ function DocumentCard({ doc }: { doc: Document }) {
   return (
     <Pressable
       accessibilityRole="link"
-      onPress={() => Linking.openURL(doc.url)}
+      onPress={() => openExternalUrl(doc.url)}
       style={({ pressed }) => [
         styles.docCard,
         { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },

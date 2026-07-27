@@ -4,9 +4,12 @@
 // Uses: videoCategoryId=25 (News & Politics), regionCode=IN, order=date
 
 import { API_CONFIG } from '../constants/api';
+import { fetchProxyJson, hasBackendProxy } from './proxyClient';
 import type { NewsItem } from './newsService';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/search';
+let youtubeQuotaExhausted = false;
+let youtubeQuotaNoticeShown = false;
 
 export interface YTSearchVideo {
   videoId: string;
@@ -27,7 +30,20 @@ export async function searchYouTubeNews(
   query: string,
   maxResults = 10
 ): Promise<YTSearchVideo[]> {
+  if (hasBackendProxy()) {
+    try {
+      const data = await fetchProxyJson<{ items?: YTSearchVideo[] }>('/youtube/search', {
+        query,
+        maxResults: Math.min(maxResults, 25),
+      });
+      return data.items || [];
+    } catch {
+      return [];
+    }
+  }
+
   if (!API_CONFIG.YOUTUBE_API_KEY) return [];
+  if (youtubeQuotaExhausted) return [];
 
   const params = new URLSearchParams({
     part: 'snippet',
@@ -45,7 +61,22 @@ export async function searchYouTubeNews(
     const res = await fetch(`${BASE}?${params.toString()}`);
     if (!res.ok) {
       const err = await res.text();
-      console.warn('YouTube Search error:', res.status, err);
+      const isQuotaError =
+        res.status === 429 ||
+        err.includes('RESOURCE_EXHAUSTED') ||
+        err.includes('quotaExceeded') ||
+        err.includes('rateLimitExceeded');
+
+      if (isQuotaError) {
+        youtubeQuotaExhausted = true;
+        if (!youtubeQuotaNoticeShown) {
+          youtubeQuotaNoticeShown = true;
+          console.info('YouTube quota exhausted for this session; using saved/mock video fallback.');
+        }
+        return [];
+      }
+
+      console.warn('YouTube Search failed:', res.status);
       return [];
     }
     const data = await res.json();
@@ -62,7 +93,7 @@ export async function searchYouTubeNews(
       publishedAt: item.snippet?.publishedAt || '',
     })).filter((v: YTSearchVideo) => v.videoId);
   } catch (e) {
-    console.warn('YouTube Search fetch failed:', e);
+    console.warn('YouTube Search fetch failed. Using saved/mock video fallback.');
     return [];
   }
 }

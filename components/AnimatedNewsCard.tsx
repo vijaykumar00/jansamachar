@@ -3,7 +3,6 @@ import {
   AccessibilityInfo,
   Alert,
   Animated,
-  Linking,
   Pressable,
   StyleSheet,
   View,
@@ -14,6 +13,7 @@ import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { AppText, Badge, IconButton } from '@/components/ui/design-system';
+import { openExternalUrl } from '@/services/linkService';
 
 export type NewsCardVariant = 'article' | 'video' | 'local';
 
@@ -118,7 +118,7 @@ function NewsCard({ item, index, variant }: Props) {
 
   const openStory = () => {
     if (item.videoId) {
-      Linking.openURL(`https://www.youtube.com/watch?v=${item.videoId}`);
+      openExternalUrl(`https://www.youtube.com/watch?v=${item.videoId}`);
       return;
     }
 
@@ -147,7 +147,7 @@ function NewsCard({ item, index, variant }: Props) {
     const text = `${item.title}\n\n${item.url || 'JanSamachar'}\n\nShared from JanSamachar`;
     Alert.alert('Share story', 'Choose an action', [
       { text: 'Open link', onPress: openStory },
-      { text: 'WhatsApp', onPress: () => Linking.openURL(`whatsapp://send?text=${encodeURIComponent(text)}`) },
+      { text: 'WhatsApp', onPress: () => openExternalUrl(`whatsapp://send?text=${encodeURIComponent(text)}`) },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };

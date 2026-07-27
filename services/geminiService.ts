@@ -1,4 +1,5 @@
 import { API_CONFIG, DEMO_MODE } from '../constants/api';
+import { hasBackendProxy, postProxyJson } from './proxyClient';
 
 const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -12,6 +13,15 @@ interface GeminiRequest {
 }
 
 async function callGemini(prompt: string, maxTokens = 300): Promise<string> {
+  if (hasBackendProxy()) {
+    const data = await postProxyJson<{ text?: string }>('/ai/gemini', {
+      prompt,
+      maxTokens,
+    });
+    if (data.text) return data.text;
+    throw new Error('Gemini proxy returned no text');
+  }
+
   if (!API_CONFIG.GEMINI_API_KEY || API_CONFIG.GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY') {
     throw new Error('Gemini API key not configured');
   }

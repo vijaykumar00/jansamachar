@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Linking, Pressable, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
+import { FlatList, Pressable, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { INTERESTS } from '@/constants/professions';
@@ -8,6 +8,7 @@ import { radius, spacing } from '@/constants/theme';
 import { useProfileStore } from '@/store/userProfileStore';
 import { fetchNewsByQuery, toNewsItem } from '@/services/newsDataService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
+import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
 import AnimatedNewsCard, { type NewsCardItem } from '@/components/AnimatedNewsCard';
 import { AppButton, AppText, Badge, Chip, EmptyState, LoadingState, Screen, SearchField, SectionHeader } from '@/components/ui/design-system';
@@ -242,7 +243,7 @@ export default function SearchScreen() {
             return (
               <Pressable
                 accessibilityRole="link"
-                onPress={() => Linking.openURL(`https://www.youtube.com/${item.handle}`)}
+                onPress={() => openExternalUrl(`https://www.youtube.com/${item.handle}`)}
                 style={({ pressed }) => [
                   styles.rowCard,
                   { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.86 : 1 },

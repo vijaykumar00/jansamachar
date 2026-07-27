@@ -4,6 +4,7 @@
 // Supports: India, Hindi + English, category filter, keyword search
 
 import { API_CONFIG } from '../constants/api';
+import { fetchProxyJson, hasBackendProxy } from './proxyClient';
 import type { NewsItem } from './newsService';
 
 const BASE = 'https://newsdata.io/api/1/latest';
@@ -51,6 +52,20 @@ export async function fetchNewsByQuery(
   language = 'hi,en',
   size = 10
 ): Promise<NewsDataArticle[]> {
+  if (hasBackendProxy()) {
+    try {
+      const data = await fetchProxyJson<NewsDataResponse>('/newsdata/search', {
+        query: query.slice(0, 100),
+        language,
+        size: Math.min(size, 10),
+      });
+      return data.results || [];
+    } catch (e) {
+      console.warn('NewsData proxy failed:', e);
+      return [];
+    }
+  }
+
   const params = new URLSearchParams({
     apikey: API_CONFIG.NEWSDATA_API_KEY,
     country: 'in',
@@ -106,6 +121,18 @@ export async function fetchProfessionNews(keywords: string[], language = 'hi,en'
  * Fetch national India top news
  */
 export async function fetchNationalNews(language = 'hi,en'): Promise<NewsDataArticle[]> {
+  if (hasBackendProxy()) {
+    try {
+      const data = await fetchProxyJson<NewsDataResponse>('/newsdata/latest', {
+        language,
+        size: 10,
+      });
+      return data.results || [];
+    } catch {
+      return [];
+    }
+  }
+
   const params = new URLSearchParams({
     apikey: API_CONFIG.NEWSDATA_API_KEY,
     country: 'in',

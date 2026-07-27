@@ -19,6 +19,9 @@ export const API_CONFIG = {
   SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
   SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
 
+  // Optional backend proxy for quota-protected third-party APIs.
+  BACKEND_PROXY_URL: process.env.EXPO_PUBLIC_BACKEND_PROXY_URL ?? '',
+
   // CountryStateCity.in — India state→district→city hierarchy (free tier)
   // Sign up free at: countrystatecity.in
   CSC_API_KEY: process.env.EXPO_PUBLIC_CSC_API_KEY ?? '',

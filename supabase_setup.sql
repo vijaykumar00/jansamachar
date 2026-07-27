@@ -58,13 +58,39 @@ CREATE TABLE IF NOT EXISTS news_posts (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- One vote per authenticated user per post. This keeps the public RPC from
+-- becoming a repeat-click counter while preserving the existing upvote API.
+CREATE TABLE IF NOT EXISTS post_votes (
+  post_id UUID REFERENCES news_posts(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (post_id, user_id)
+);
+
 -- Function to increment upvotes
 CREATE OR REPLACE FUNCTION increment_upvotes(post_id UUID)
 RETURNS VOID AS $$
+DECLARE
+  inserted_count INTEGER;
 BEGIN
-  UPDATE news_posts SET upvotes = upvotes + 1 WHERE id = post_id;
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required to upvote';
+  END IF;
+
+  INSERT INTO post_votes (post_id, user_id)
+  VALUES (post_id, auth.uid())
+  ON CONFLICT DO NOTHING;
+
+  GET DIAGNOSTICS inserted_count = ROW_COUNT;
+
+  IF inserted_count = 1 THEN
+    UPDATE news_posts
+      SET upvotes = upvotes + 1,
+          updated_at = NOW()
+      WHERE id = post_id;
+  END IF;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ─── Live Streams ─────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS live_streams (
@@ -96,6 +122,7 @@ CREATE TABLE IF NOT EXISTS saved_news (
 -- ─── Row Level Security (RLS) ─────────────────────────────────────────
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE news_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE post_votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE live_streams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE saved_news ENABLE ROW LEVEL SECURITY;
 
@@ -107,16 +134,31 @@ CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.
 CREATE POLICY "News posts are viewable by everyone" ON news_posts FOR SELECT USING (true);
 CREATE POLICY "Logged-in users can create posts" ON news_posts FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own posts" ON news_posts FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own posts" ON news_posts FOR DELETE USING (auth.uid() = user_id);
+
+-- Votes: users can only create and inspect their own vote rows
+CREATE POLICY "Users can view own post votes" ON post_votes FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can vote once per post" ON post_votes FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Live streams: anyone can read, only owner can manage
 CREATE POLICY "Live streams viewable by everyone" ON live_streams FOR SELECT USING (true);
 CREATE POLICY "Logged-in users can create streams" ON live_streams FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own streams" ON live_streams FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own streams" ON live_streams FOR DELETE USING (auth.uid() = user_id);
 
 -- Saved news: only owner can see/manage
 CREATE POLICY "Users can view own saved news" ON saved_news FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can save news" ON saved_news FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can delete own saved news" ON saved_news FOR DELETE USING (auth.uid() = user_id);
+
+-- Query performance for feed, local, saved, and realtime screens
+CREATE INDEX IF NOT EXISTS idx_profiles_state_language ON profiles (state, language);
+CREATE INDEX IF NOT EXISTS idx_news_posts_created_at ON news_posts (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_posts_category_created_at ON news_posts (category, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_posts_state_created_at ON news_posts (state, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_posts_user_created_at ON news_posts (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_live_streams_active_viewers ON live_streams (is_live, viewer_count DESC);
+CREATE INDEX IF NOT EXISTS idx_saved_news_user_saved_at ON saved_news (user_id, saved_at DESC);
 
 -- ─── Enable Realtime ─────────────────────────────────────────────────
 ALTER PUBLICATION supabase_realtime ADD TABLE news_posts;

@@ -1,10 +1,11 @@
 import React from 'react';
-import { Alert, Linking, Pressable, ScrollView, StatusBar, StyleSheet, Switch, View, useColorScheme } from 'react-native';
+import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Switch, View, useColorScheme } from 'react-native';
 import Constants from 'expo-constants';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS } from '@/constants/professions';
 import { radius, spacing } from '@/constants/theme';
 import { useProfileStore } from '@/store/userProfileStore';
+import { openExternalUrl } from '@/services/linkService';
 import {
   AppButton,
   AppText,
@@ -184,8 +185,8 @@ export default function ProfileScreen() {
 
         <SectionHeader title="Quick Actions" />
         <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
-          <AppButton label="File RTI" variant="secondary" onPress={() => Linking.openURL('https://rtionline.gov.in')} />
-          <AppButton label="Consumer helpline" variant="secondary" onPress={() => Linking.openURL('https://consumerhelpline.gov.in')} />
+          <AppButton label="File RTI" variant="secondary" onPress={() => openExternalUrl('https://rtionline.gov.in')} />
+          <AppButton label="Consumer helpline" variant="secondary" onPress={() => openExternalUrl('https://consumerhelpline.gov.in')} />
         </View>
 
         <SectionHeader title="About" />
