@@ -143,3 +143,46 @@ test('Profile and Home expose local engagement value', () => {
   assert.match(home, /Saved For Later/);
   assert.match(home, /ReturnUserStrip/);
 });
+
+test('Phase 4 analytics are local and privacy-safe', () => {
+  const analytics = read('services/analyticsService.ts');
+  assert.match(analytics, /jansamachar_local_analytics_v1/);
+  assert.match(analytics, /MAX_EVENTS = 150/);
+  assert.match(analytics, /sanitizeProperties/);
+  assert.doesNotMatch(analytics, /https?:\/\//);
+  assert.match(read('app/_layout.tsx'), /app_opened/);
+  assert.match(read('app/(tabs)/search.tsx'), /search_performed/);
+  assert.match(read('store/engagementStore.ts'), /story_saved/);
+  assert.match(read('store/engagementStore.ts'), /story_viewed/);
+});
+
+test('third-party fetches use timeout/retry helper', () => {
+  assert.match(read('services/fetchService.ts'), /fetchWithTimeout/);
+  const serviceFiles = [
+    'services/newsDataService.ts',
+    'services/youtubeSearchService.ts',
+    'services/geminiService.ts',
+    'services/newsService.ts',
+    'services/geoService.ts',
+    'services/proxyClient.ts',
+  ];
+  for (const file of serviceFiles) {
+    assert.match(read(file), /fetchWithTimeout/, `${file} should use fetchWithTimeout`);
+  }
+});
+
+test('provider fallback metadata is centralized', () => {
+  assert.match(read('services/fallbackService.ts'), /FallbackReason/);
+  assert.match(read('services/fallbackService.ts'), /fallbackLabel/);
+  assert.match(read('app/(tabs)/index.tsx'), /fallbackLabel\(createFallbackMeta/);
+  assert.match(read('app/(tabs)/documents.tsx'), /fallbackLabel\(createFallbackMeta/);
+  assert.match(read('app/(tabs)/live.tsx'), /fallbackLabel\(createFallbackMeta/);
+  assert.match(read('app/(tabs)/search.tsx'), /fallbackLabel\(createFallbackMeta/);
+});
+
+test('low-risk provider dedupe caches and sync contracts exist', () => {
+  assert.match(read('services/newsDataService.ts'), /responseCache/);
+  assert.match(read('services/youtubeSearchService.ts'), /responseCache/);
+  assert.match(read('services/syncContracts.ts'), /EngagementSyncRecord/);
+  assert.match(read('services/syncContracts.ts'), /buildEngagementSyncSnapshot/);
+});

@@ -4,10 +4,14 @@
 // Supports: India, Hindi + English, category filter, keyword search
 
 import { API_CONFIG } from '../constants/api';
+import { trackEvent } from './analyticsService';
+import { fetchWithTimeout } from './fetchService';
 import { fetchProxyJson, hasBackendProxy } from './proxyClient';
 import type { NewsItem } from './newsService';
 
 const BASE = 'https://newsdata.io/api/1/latest';
+const CACHE_TTL_MS = 3 * 60 * 1000;
+const responseCache = new Map<string, { fetchedAt: number; data: NewsDataArticle[] }>();
 
 export interface NewsDataArticle {
   id: string;
@@ -42,6 +46,20 @@ interface NewsDataResponse {
   nextPage?: string;
 }
 
+function getCached(cacheKey: string): NewsDataArticle[] | null {
+  const cached = responseCache.get(cacheKey);
+  if (!cached) return null;
+  if (Date.now() - cached.fetchedAt > CACHE_TTL_MS) {
+    responseCache.delete(cacheKey);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCached(cacheKey: string, data: NewsDataArticle[]) {
+  responseCache.set(cacheKey, { fetchedAt: Date.now(), data });
+}
+
 /**
  * Fetch India news by keyword query
  * @param query  e.g. "Varanasi MSP kisan" or "JEE result 2025"
@@ -52,6 +70,10 @@ export async function fetchNewsByQuery(
   language = 'hi,en',
   size = 10
 ): Promise<NewsDataArticle[]> {
+  const cacheKey = `search:${query.slice(0, 100)}:${language}:${Math.min(size, 10)}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   if (hasBackendProxy()) {
     try {
       const data = await fetchProxyJson<NewsDataResponse>('/newsdata/search', {
@@ -59,8 +81,11 @@ export async function fetchNewsByQuery(
         language,
         size: Math.min(size, 10),
       });
-      return data.results || [];
+      const results = data.results || [];
+      setCached(cacheKey, results);
+      return results;
     } catch (e) {
+      void trackEvent('provider_fallback_used', { provider: 'newsdata_proxy', reason: 'provider_error' });
       console.warn('NewsData proxy failed:', e);
       return [];
     }
@@ -75,15 +100,19 @@ export async function fetchNewsByQuery(
   });
 
   try {
-    const res = await fetch(`${BASE}?${params.toString()}`);
+    const res = await fetchWithTimeout(`${BASE}?${params.toString()}`, { timeoutMs: 9000, retries: 1 });
     if (!res.ok) {
       const err = await res.text();
+      void trackEvent('provider_fallback_used', { provider: 'newsdata', reason: String(res.status) });
       console.warn('NewsData error:', res.status, err);
       return [];
     }
     const data: NewsDataResponse = await res.json();
-    return data.results || [];
+    const results = data.results || [];
+    setCached(cacheKey, results);
+    return results;
   } catch (e) {
+    void trackEvent('provider_fallback_used', { provider: 'newsdata', reason: 'provider_error' });
     console.warn('NewsData fetch failed:', e);
     return [];
   }
@@ -121,14 +150,21 @@ export async function fetchProfessionNews(keywords: string[], language = 'hi,en'
  * Fetch national India top news
  */
 export async function fetchNationalNews(language = 'hi,en'): Promise<NewsDataArticle[]> {
+  const cacheKey = `latest:${language}:10`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   if (hasBackendProxy()) {
     try {
       const data = await fetchProxyJson<NewsDataResponse>('/newsdata/latest', {
         language,
         size: 10,
       });
-      return data.results || [];
+      const results = data.results || [];
+      setCached(cacheKey, results);
+      return results;
     } catch {
+      void trackEvent('provider_fallback_used', { provider: 'newsdata_proxy', reason: 'provider_error' });
       return [];
     }
   }
@@ -140,11 +176,17 @@ export async function fetchNationalNews(language = 'hi,en'): Promise<NewsDataArt
     size: '10',
   });
   try {
-    const res = await fetch(`${BASE}?${params.toString()}`);
-    if (!res.ok) return [];
+    const res = await fetchWithTimeout(`${BASE}?${params.toString()}`, { timeoutMs: 9000, retries: 1 });
+    if (!res.ok) {
+      void trackEvent('provider_fallback_used', { provider: 'newsdata', reason: String(res.status) });
+      return [];
+    }
     const data: NewsDataResponse = await res.json();
-    return data.results || [];
+    const results = data.results || [];
+    setCached(cacheKey, results);
+    return results;
   } catch {
+    void trackEvent('provider_fallback_used', { provider: 'newsdata', reason: 'provider_error' });
     return [];
   }
 }

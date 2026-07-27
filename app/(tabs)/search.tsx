@@ -6,8 +6,10 @@ import { INTERESTS } from '@/constants/professions';
 import { TRUSTED_YOUTUBE_CHANNELS } from '@/constants/sources';
 import { radius, spacing } from '@/constants/theme';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
+import { trackEvent } from '@/services/analyticsService';
 import { fetchNewsByQuery, toNewsItem } from '@/services/newsDataService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
+import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
 import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
 import AnimatedNewsCard, { type NewsCardItem } from '@/components/AnimatedNewsCard';
@@ -28,6 +30,7 @@ function todayKey() {
 }
 
 async function loadSearchResults(query: string) {
+  void trackEvent('search_performed', { queryLength: query.length });
   const [articles, videos] = await Promise.allSettled([
     fetchNewsByQuery(query, 'hi,en', 10),
     searchYouTubeNews(`${query} India news`, 8),
@@ -45,7 +48,7 @@ async function loadSearchResults(query: string) {
   return {
     articles: liveStories.length > 0 ? liveStories : fallback.filter((item) => item.source !== 'youtube'),
     videos: liveVideos.length > 0 ? liveVideos : fallback.filter((item) => item.source === 'youtube' || item.videoId),
-    fallbackLabel: usingFallback ? `Showing offline fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
+    fallbackLabel: usingFallback ? fallbackLabel(createFallbackMeta('empty_response', 'search providers')) : '',
   };
 }
 

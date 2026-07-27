@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { MOCK_LIVE_STREAMS, MOCK_NEWS_ITEMS } from '@/services/mockData';
+import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
 import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
 import { AppIcon, AppText, Badge, EmptyState, IconButton, LoadingState, Screen, SectionHeader } from '@/components/ui/design-system';
@@ -57,7 +58,7 @@ async function loadVideoTab() {
           url: item.url || 'https://youtube.com',
         }))
       : fallbackLongForm,
-    fallbackLabel: usingFallback ? `Showing offline fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
+    fallbackLabel: usingFallback ? fallbackLabel(createFallbackMeta('empty_response', 'video sources')) : '',
   };
 }
 

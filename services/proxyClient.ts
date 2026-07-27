@@ -1,4 +1,5 @@
 import { API_CONFIG } from '../constants/api';
+import { fetchWithTimeout } from './fetchService';
 
 type QueryParams = Record<string, string | number | boolean | undefined>;
 
@@ -20,7 +21,7 @@ export function buildProxyUrl(path: string, params?: QueryParams): string {
 }
 
 export async function fetchProxyJson<T>(path: string, params?: QueryParams): Promise<T> {
-  const res = await fetch(buildProxyUrl(path, params));
+  const res = await fetchWithTimeout(buildProxyUrl(path, params), { timeoutMs: 9000, retries: 1 });
   if (!res.ok) {
     throw new Error(`Proxy request failed: ${res.status}`);
   }
@@ -28,10 +29,12 @@ export async function fetchProxyJson<T>(path: string, params?: QueryParams): Pro
 }
 
 export async function postProxyJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(buildProxyUrl(path), {
+  const res = await fetchWithTimeout(buildProxyUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    timeoutMs: 12000,
+    retries: 1,
   });
   if (!res.ok) {
     throw new Error(`Proxy request failed: ${res.status}`);

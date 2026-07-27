@@ -18,6 +18,7 @@ import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStor
 import { buildPersonalizedFeed, getGreeting, type FeedSection } from '@/services/personalizationService';
 import { searchYouTubeNews } from '@/services/youtubeSearchService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
+import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
 import AnimatedNewsCard, { type NewsCardItem, type NewsCardVariant } from '@/components/AnimatedNewsCard';
 import {
   AppIcon,
@@ -62,12 +63,6 @@ function toFallbackSections(): FeedSection[] {
       geoLevel: 'national',
     },
   ];
-}
-
-function formatSavedTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return 'earlier';
-  return date.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
 }
 
 function formatRelative(dateStr?: string): string {
@@ -241,7 +236,7 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       ].filter((section) => section.items.length > 0) as FeedSection[]),
       fetchedAt: new Date().toISOString(),
       isFallback: !hasStories,
-      fallbackLabel: !hasStories ? `Showing offline fallback from ${formatSavedTime(new Date().toISOString())}` : undefined,
+      fallbackLabel: !hasStories ? fallbackLabel(createFallbackMeta('empty_response', 'home feed')) : undefined,
     };
 
     if (hasStories) lastSuccessfulHomeFeed = result;
@@ -252,7 +247,7 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       return {
         ...saved,
         isFallback: true,
-        fallbackLabel: `Showing last successful feed from ${formatSavedTime(saved.fetchedAt)}`,
+        fallbackLabel: fallbackLabel({ reason: 'last_success', fetchedAt: saved.fetchedAt }),
       };
     }
 
@@ -261,7 +256,7 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       sections: normalizeSectionItems(toFallbackSections()),
       fetchedAt,
       isFallback: true,
-      fallbackLabel: `Showing offline fallback from ${formatSavedTime(fetchedAt)}`,
+      fallbackLabel: fallbackLabel({ reason: 'provider_error', provider: 'home feed', fetchedAt }),
     };
   }
 }

@@ -4,6 +4,7 @@
 import { TRUSTED_YOUTUBE_CHANNELS, YOUTUBE_API_BASE } from '../constants/sources';
 import { API_CONFIG, DEMO_MODE } from '../constants/api';
 import { MOCK_NEWS_ITEMS } from './mockData';
+import { fetchWithTimeout } from './fetchService';
 
 export interface NewsItem {
   id: string;
@@ -36,7 +37,7 @@ async function fetchChannelVideos(channelId: string, maxResults = 5): Promise<Ne
   const url = `${YOUTUBE_API_BASE}/search?channelId=${channelId}&part=snippet&type=video&order=date&maxResults=${maxResults}&key=${API_CONFIG.YOUTUBE_API_KEY}`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url, { timeoutMs: 9000, retries: 1 });
     if (!res.ok) throw new Error(`YouTube API error: ${res.status}`);
     const data = await res.json();
 
@@ -72,7 +73,7 @@ async function fetchRSSFeed(feedUrl: string, feedName: string): Promise<NewsItem
   const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=10${API_CONFIG.RSS2JSON_KEY ? `&api_key=${API_CONFIG.RSS2JSON_KEY}` : ''}`;
 
   try {
-    const res = await fetch(apiUrl);
+    const res = await fetchWithTimeout(apiUrl, { timeoutMs: 9000, retries: 1 });
     if (!res.ok) throw new Error(`RSS2JSON error: ${res.status}`);
     const data = await res.json();
 
@@ -107,7 +108,7 @@ async function fetchGDELTNews(): Promise<NewsItem[]> {
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=india+news&mode=artlist&maxrecords=20&format=json&sourcelang=english&sourcecountry=india`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url, { timeoutMs: 9000, retries: 1 });
     if (!res.ok) throw new Error(`GDELT error: ${res.status}`);
     const data = await res.json();
 
@@ -207,8 +208,9 @@ export async function fetchBreakingNews(): Promise<NewsItem[]> {
   }
 
   try {
-    const res = await fetch(
-      `https://newsapi.org/v2/top-headlines?country=in&apiKey=${API_CONFIG.NEWS_API_KEY}&pageSize=10`
+    const res = await fetchWithTimeout(
+      `https://newsapi.org/v2/top-headlines?country=in&apiKey=${API_CONFIG.NEWS_API_KEY}&pageSize=10`,
+      { timeoutMs: 9000, retries: 1 }
     );
     const data = await res.json();
     return (data.articles || []).map((a: any, i: number): NewsItem => ({

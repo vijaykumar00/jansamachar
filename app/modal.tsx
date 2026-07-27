@@ -14,7 +14,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { radius, spacing, typography } from '@/constants/theme';
 import { AppButton, AppIcon, AppText, Badge, BottomSheet, IconButton, Screen } from '@/components/ui/design-system';
+import { trackEvent } from '@/services/analyticsService';
 import { factCheck, summarizeNews } from '@/services/geminiService';
+import { createFallbackMeta, fallbackLabel as fallbackLabelText } from '@/services/fallbackService';
 import { openExternalUrl } from '@/services/linkService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { fetchNewsItemById, type NewsItem } from '@/services/newsService';
@@ -99,7 +101,7 @@ export default function ModalScreen() {
   const fallbackArticle = useMemo(() => routeFallbackArticle(params), [params]);
   const article = articleQuery.data || fallbackArticle;
   const fallbackLabel = articleQuery.isFetched && !articleQuery.data && articleId
-    ? `Showing route fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
+    ? fallbackLabelText(createFallbackMeta('empty_response', 'article lookup'))
     : '';
   const bodyText = useMemo(() => {
     const cleanDescription = article.description?.replace(/<[^>]*>/g, '').trim();
@@ -272,11 +274,17 @@ export default function ModalScreen() {
         {sheetMode === 'share' ? (
           <View style={styles.sheetStack}>
             <AppText variant="body" tone="secondary">{article.title}</AppText>
-            <AppButton label="Open link" onPress={() => openExternalUrl(article.url || '')} />
+            <AppButton label="Open link" onPress={() => {
+              void trackEvent('story_shared', { storySource: article.source, channelType: article.videoId ? 'video' : 'article' });
+              openExternalUrl(article.url || '');
+            }} />
             <AppButton
               label="Share to WhatsApp"
               variant="secondary"
-              onPress={() => openExternalUrl(`whatsapp://send?text=${encodeURIComponent(`${article.title}\n\n${article.url || 'JanSamachar'}`)}`)}
+              onPress={() => {
+                void trackEvent('story_shared', { storySource: article.source, channelType: article.videoId ? 'video' : 'article' });
+                openExternalUrl(`whatsapp://send?text=${encodeURIComponent(`${article.title}\n\n${article.url || 'JanSamachar'}`)}`);
+              }}
             />
           </View>
         ) : null}

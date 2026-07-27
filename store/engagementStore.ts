@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { trackEvent } from '@/services/analyticsService';
 
 export interface EngagementStory {
   id: string;
@@ -100,11 +101,13 @@ export const useEngagementStore = create<EngagementStore>((set, get) => ({
     set((state) => ({
       savedItems: [savedStory, ...state.savedItems.filter((item) => item.id !== savedStory.id)].slice(0, MAX_SAVED_ITEMS),
     }));
+    void trackEvent('story_saved', { storySource: savedStory.source, category: savedStory.category });
     void persistEngagement();
   },
 
   removeSavedStory: (storyId) => {
     set((state) => ({ savedItems: state.savedItems.filter((item) => item.id !== storyId) }));
+    void trackEvent('story_unsaved');
     void persistEngagement();
   },
 
@@ -123,11 +126,13 @@ export const useEngagementStore = create<EngagementStore>((set, get) => ({
     set((state) => ({
       historyItems: [historyStory, ...state.historyItems.filter((item) => item.id !== historyStory.id)].slice(0, MAX_HISTORY_ITEMS),
     }));
+    void trackEvent('story_viewed', { storySource: historyStory.source, category: historyStory.category, isVideo: Boolean(historyStory.videoId) });
     void persistEngagement();
   },
 
   clearHistory: () => {
     set({ historyItems: [] });
+    void trackEvent('history_cleared');
     void persistEngagement();
   },
 

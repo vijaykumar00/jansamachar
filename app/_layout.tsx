@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
+import { trackEvent } from '@/services/analyticsService';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { useEngagementStore } from '@/store/engagementStore';
 
@@ -20,6 +21,7 @@ function NavigationController() {
   useEffect(() => {
     loadProfile();
     loadEngagement();
+    void trackEvent('app_opened');
   }, [loadEngagement, loadProfile]);
 
   useEffect(() => {

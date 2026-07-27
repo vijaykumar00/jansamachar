@@ -1,4 +1,5 @@
 import { Alert, Linking } from 'react-native';
+import { trackEvent } from './analyticsService';
 
 const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'whatsapp:']);
 const BLOCKED_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0']);
@@ -25,14 +26,17 @@ export function isAllowedExternalUrl(rawUrl: string): boolean {
 
 export async function openExternalUrl(rawUrl: string, fallbackMessage = 'This link cannot be opened safely.') {
   if (!isAllowedExternalUrl(rawUrl)) {
+    void trackEvent('external_link_blocked', { scheme: rawUrl.split(':')[0] || 'unknown' });
     Alert.alert('Blocked link', fallbackMessage);
     return false;
   }
 
   try {
     await Linking.openURL(rawUrl);
+    void trackEvent('external_link_opened', { scheme: rawUrl.split(':')[0] || 'unknown' });
     return true;
   } catch {
+    void trackEvent('error_encountered', { area: 'external_link' });
     Alert.alert('Could not open link', 'Please try again later.');
     return false;
   }

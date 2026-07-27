@@ -5,6 +5,7 @@ import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { getIndiaGeoData, type GeoDistrict, type GeoState } from '@/services/geoService';
 import { fetchDistrictNews, fetchStateNews, toNewsItem } from '@/services/newsDataService';
+import { createFallbackMeta, fallbackLabel } from '@/services/fallbackService';
 import { MOCK_DOCUMENTS, MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { getCitizenNewsItems } from '@/services/supabaseService';
 import { openExternalUrl } from '@/services/linkService';
@@ -72,7 +73,7 @@ async function loadLocalStories(profile: ReturnType<typeof useProfileStore.getSt
   const combined = [...publisherItems, ...citizenItems];
   return {
     items: combined.length > 0 ? combined.slice(0, 14) : fallback.slice(0, 8),
-    fallbackLabel: combined.length === 0 ? `Showing offline fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
+    fallbackLabel: combined.length === 0 ? fallbackLabel(createFallbackMeta('empty_response', 'local sources')) : '',
   };
 }
 

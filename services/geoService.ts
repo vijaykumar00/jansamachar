@@ -8,6 +8,7 @@
 // ✅ CACHED — Stored in AsyncStorage for 7 days, no repeated downloads
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchWithTimeout } from './fetchService';
 
 const CDN_URL =
   'https://cdn.jsdelivr.net/gh/sab99r/Indian-States-And-Districts@master/states-and-districts.json';
@@ -76,7 +77,7 @@ export async function getIndiaGeoData(): Promise<GeoState[]> {
   // 3. Fetch from CDN
   try {
     console.log('[GeoService] Fetching India geo data from CDN...');
-    const res = await fetch(CDN_URL);
+    const res = await fetchWithTimeout(CDN_URL, { timeoutMs: 7000, retries: 1 });
     if (!res.ok) throw new Error(`CDN returned ${res.status}`);
     const raw = await res.json();
     const data = parseRaw(raw);

@@ -12,6 +12,7 @@ import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { AppIcon, AppText, Badge, IconButton } from '@/components/ui/design-system';
+import { trackEvent } from '@/services/analyticsService';
 import { openExternalUrl } from '@/services/linkService';
 import { type EngagementStory, useEngagementStore } from '@/store/engagementStore';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
@@ -139,9 +140,8 @@ function NewsCard({ item, index, variant }: Props) {
   const summarySnippet = item.aiSummary?.replace(/\s+/g, ' ').replace(/^[-•]\s*/, '').trim() || '';
 
   const openStory = () => {
-    addHistory(toEngagementStory(item));
-
     if (item.videoId) {
+      addHistory(toEngagementStory(item));
       openExternalUrl(`https://www.youtube.com/watch?v=${item.videoId}`);
       return;
     }
@@ -169,6 +169,7 @@ function NewsCard({ item, index, variant }: Props) {
   };
 
   const handleShare = () => {
+    void trackEvent('story_shared', { storySource: item.source, channelType: item.videoId ? 'video' : 'article' });
     const text = `${item.title}\n\n${item.url || 'JanSamachar'}\n\nShared from JanSamachar`;
     Alert.alert('Share story', 'Choose an action', [
       { text: 'Open link', onPress: openStory },

@@ -4,12 +4,16 @@
 // Uses: videoCategoryId=25 (News & Politics), regionCode=IN, order=date
 
 import { API_CONFIG } from '../constants/api';
+import { trackEvent } from './analyticsService';
+import { fetchWithTimeout } from './fetchService';
 import { fetchProxyJson, hasBackendProxy } from './proxyClient';
 import type { NewsItem } from './newsService';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/search';
+const CACHE_TTL_MS = 3 * 60 * 1000;
 let youtubeQuotaExhausted = false;
 let youtubeQuotaNoticeShown = false;
+const responseCache = new Map<string, { fetchedAt: number; data: YTSearchVideo[] }>();
 
 export interface YTSearchVideo {
   videoId: string;
@@ -30,14 +34,23 @@ export async function searchYouTubeNews(
   query: string,
   maxResults = 10
 ): Promise<YTSearchVideo[]> {
+  const limitedMaxResults = Math.min(maxResults, 25);
+  const cacheKey = `${query}:${limitedMaxResults}`;
+  const cached = responseCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt <= CACHE_TTL_MS) return cached.data;
+  if (cached) responseCache.delete(cacheKey);
+
   if (hasBackendProxy()) {
     try {
       const data = await fetchProxyJson<{ items?: YTSearchVideo[] }>('/youtube/search', {
         query,
-        maxResults: Math.min(maxResults, 25),
+        maxResults: limitedMaxResults,
       });
-      return data.items || [];
+      const items = data.items || [];
+      responseCache.set(cacheKey, { fetchedAt: Date.now(), data: items });
+      return items;
     } catch {
+      void trackEvent('provider_fallback_used', { provider: 'youtube_proxy', reason: 'provider_error' });
       return [];
     }
   }
@@ -53,12 +66,12 @@ export async function searchYouTubeNews(
     order: 'date',            // Most recent first
     regionCode: 'IN',         // India
     relevanceLanguage: 'hi',  // Prefer Hindi results
-    maxResults: String(Math.min(maxResults, 25)),
+    maxResults: String(limitedMaxResults),
     key: API_CONFIG.YOUTUBE_API_KEY,
   });
 
   try {
-    const res = await fetch(`${BASE}?${params.toString()}`);
+    const res = await fetchWithTimeout(`${BASE}?${params.toString()}`, { timeoutMs: 9000, retries: 1 });
     if (!res.ok) {
       const err = await res.text();
       const isQuotaError =
@@ -69,6 +82,7 @@ export async function searchYouTubeNews(
 
       if (isQuotaError) {
         youtubeQuotaExhausted = true;
+        void trackEvent('provider_fallback_used', { provider: 'youtube', reason: 'quota_exhausted' });
         if (!youtubeQuotaNoticeShown) {
           youtubeQuotaNoticeShown = true;
           console.info('YouTube quota exhausted for this session; using saved/mock video fallback.');
@@ -76,11 +90,12 @@ export async function searchYouTubeNews(
         return [];
       }
 
+      void trackEvent('provider_fallback_used', { provider: 'youtube', reason: String(res.status) });
       console.warn('YouTube Search failed:', res.status);
       return [];
     }
     const data = await res.json();
-    return (data.items || []).map((item: any): YTSearchVideo => ({
+    const items = (data.items || []).map((item: any): YTSearchVideo => ({
       videoId: item.id?.videoId || '',
       title: item.snippet?.title || '',
       description: item.snippet?.description || '',
@@ -92,7 +107,10 @@ export async function searchYouTubeNews(
       channelId: item.snippet?.channelId || '',
       publishedAt: item.snippet?.publishedAt || '',
     })).filter((v: YTSearchVideo) => v.videoId);
+    responseCache.set(cacheKey, { fetchedAt: Date.now(), data: items });
+    return items;
   } catch (e) {
+    void trackEvent('provider_fallback_used', { provider: 'youtube', reason: 'provider_error' });
     console.warn('YouTube Search fetch failed. Using saved/mock video fallback.');
     return [];
   }

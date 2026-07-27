@@ -1,4 +1,5 @@
 import { API_CONFIG, DEMO_MODE } from '../constants/api';
+import { fetchWithTimeout } from './fetchService';
 import { hasBackendProxy, postProxyJson } from './proxyClient';
 
 const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
@@ -34,10 +35,12 @@ async function callGemini(prompt: string, maxTokens = 300): Promise<string> {
   let lastError = '';
   for (const model of GEMINI_MODELS) {
     try {
-      const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${API_CONFIG.GEMINI_API_KEY}`, {
+      const res = await fetchWithTimeout(`${GEMINI_BASE}/${model}:generateContent?key=${API_CONFIG.GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        timeoutMs: 12000,
+        retries: 1,
       });
 
       if (!res.ok) {
