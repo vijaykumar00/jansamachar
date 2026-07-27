@@ -195,14 +195,14 @@ export async function fetchNationalNews(language = 'hi,en'): Promise<NewsDataArt
 export function toNewsItem(article: NewsDataArticle): NewsItem {
   return {
     id: stableArticleId(article),
-    title: article.title,
+    title: article.title || 'Untitled',
     description: article.description || '',
     thumbnailUrl: article.image_url || '',
-    channelName: article.source_name || article.source_id,
+    channelName: article.source_name || article.source_id || 'NewsData',
     channelId: article.source_id,
     channelType: 'newsdata',
     language: article.language || 'en',
-    publishedAt: article.pubDate,
+    publishedAt: article.pubDate || new Date().toISOString(),
     url: article.link,
     source: 'newsdata' as const,
     trustLevel: 'verified',

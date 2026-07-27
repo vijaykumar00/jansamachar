@@ -195,3 +195,19 @@ test('runtime news surfaces do not use mock data or demo mode', () => {
   assert.doesNotMatch(appSource, /DEMO_MODE/);
   assert.doesNotMatch(read('.env.example'), /EXPO_PUBLIC_DEMO_MODE/);
 });
+
+test('local YouTube source registry has real scoped sources and no placeholder IDs', () => {
+  const registry = read('services/localSourceRegistry.ts');
+  const localChannelService = read('services/localChannelService.ts');
+  const personalization = read('services/personalizationService.ts');
+
+  assert.match(registry, /LOCAL_YOUTUBE_SOURCES/);
+  assert.match(registry, /himachal-darpan-live-tv/);
+  assert.match(registry, /UC4QApOYc1hiyxO8ZcDDDg2A/);
+  assert.match(registry, /Rajgarh/);
+  assert.match(registry, /Sirmour/);
+  assert.doesNotMatch(registry, /UCx{3,}/i);
+  assert.match(localChannelService, /getMatchingLocalYouTubeSources/);
+  assert.match(localChannelService, /fetchChannelVideos/);
+  assert.match(personalization, /fetchLocalChannelNews\(district, state, 5, locality\)/);
+});

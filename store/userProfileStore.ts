@@ -17,6 +17,7 @@ export interface UserProfile {
   stateName: string;
   districtId: string;
   districtName: string;
+  localityName?: string;
   // What do you like?
   interests: string[];
   // Language
