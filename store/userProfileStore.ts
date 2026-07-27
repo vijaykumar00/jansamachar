@@ -1,6 +1,7 @@
 // JanSamachar — User Profile Store (Zustand + AsyncStorage)
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useColorScheme } from 'react-native';
 import type { ProfessionId, AgeGroup, Language } from '../constants/professions';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
@@ -96,3 +97,11 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
     AsyncStorage.removeItem(STORAGE_KEY);
   },
 }));
+
+export function useResolvedColorScheme(): 'light' | 'dark' {
+  const systemScheme = useColorScheme();
+  const preference = useProfileStore((state) => state.profile.themePreference);
+
+  if (preference === 'light' || preference === 'dark') return preference;
+  return systemScheme === 'dark' ? 'dark' : 'light';
+}

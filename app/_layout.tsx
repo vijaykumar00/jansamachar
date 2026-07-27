@@ -2,10 +2,9 @@ import { useFonts } from 'expo-font';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
-import { useProfileStore } from '@/store/userProfileStore';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -32,7 +31,7 @@ function NavigationController() {
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useResolvedColorScheme();
   const [loaded] = useFonts({
     Lora: require('../assets/fonts/Lora-Regular.ttf'),
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),

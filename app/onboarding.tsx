@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, TextInput, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS, type Language, type ProfessionId } from '@/constants/professions';
 import { spacing } from '@/constants/theme';
 import { getDistrictsForState, getIndiaGeoData, type GeoDistrict, type GeoState } from '@/services/geoService';
-import { useProfileStore } from '@/store/userProfileStore';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import {
   AppButton,
   AppText,
@@ -19,7 +19,7 @@ const STEPS = ['Welcome', 'Profession', 'Location', 'Interests', 'Language'];
 const VISIBLE_INTERESTS = INTERESTS.slice(0, 8);
 
 function Progress({ step }: { step: number }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
     <View style={[styles.progressTrack, { backgroundColor: C.border }]}>
       <View style={[styles.progressFill, { backgroundColor: C.primary, width: `${((step + 1) / STEPS.length) * 100}%` }]} />
@@ -28,7 +28,7 @@ function Progress({ step }: { step: number }) {
 }
 
 export default function OnboardingScreen() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { profile, setProfile } = useProfileStore();
   const [step, setStep] = useState(0);

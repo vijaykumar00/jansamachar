@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
 const root = process.cwd();
 const read = (path) => readFileSync(join(root, path), 'utf8');
+const sourceDirs = ['app', 'components', 'constants', 'services', 'store'];
+
+function sourceFiles(dir) {
+  const absoluteDir = join(root, dir);
+  return readdirSync(absoluteDir).flatMap((name) => {
+    const fullPath = join(absoluteDir, name);
+    const relativePath = `${dir}/${name}`.replaceAll('\\', '/');
+    if (statSync(fullPath).isDirectory()) return sourceFiles(relativePath);
+    return /\.(ts|tsx)$/.test(name) ? [relativePath] : [];
+  });
+}
 
 test('Expo notification icon points to an existing asset', () => {
   const appJson = JSON.parse(read('app.json'));
@@ -62,4 +73,44 @@ test('backend proxy migration is opt-in and available to protected services', ()
   assert.match(read('services/newsDataService.ts'), /hasBackendProxy\(\)/);
   assert.match(read('services/youtubeSearchService.ts'), /hasBackendProxy\(\)/);
   assert.match(read('services/geminiService.ts'), /postProxyJson/);
+});
+
+test('Phase 2 uses semantic icons instead of letter action controls', () => {
+  const designSystem = read('components/ui/design-system.tsx');
+  assert.match(designSystem, /export function AppIcon/);
+  assert.match(designSystem, /SymbolView/);
+
+  const checkedFiles = [
+    'app/(tabs)/_layout.tsx',
+    'app/(tabs)/index.tsx',
+    'app/modal.tsx',
+    'components/AnimatedNewsCard.tsx',
+    'app/(tabs)/live.tsx',
+  ];
+  for (const file of checkedFiles) {
+    assert.doesNotMatch(read(file), /icon="(?:H|Q|L|V|P|X|S|!|>)"/, `${file} should use semantic icon names`);
+  }
+});
+
+test('fallback and profile placeholder copy is honest', () => {
+  const appSource = sourceDirs.flatMap(sourceFiles).map(read).join('\n');
+  assert.doesNotMatch(appSource, /Showing saved stories/);
+  assert.doesNotMatch(appSource, /Backend bookmark persistence/);
+  assert.doesNotMatch(appSource, /Auth is optional and can connect/);
+  assert.match(read('app/(tabs)/profile.tsx'), /No synced bookmarks yet/);
+  assert.match(read('app/(tabs)/profile.tsx'), /History is not tracked yet/);
+});
+
+test('theme and data saver preferences are wired into UI surfaces', () => {
+  assert.match(read('store/userProfileStore.ts'), /useResolvedColorScheme/);
+  assert.match(read('components/ui/design-system.tsx'), /useResolvedColorScheme/);
+  assert.match(read('components/AnimatedNewsCard.tsx'), /profile\.dataSaver|dataSaver/);
+  assert.match(read('app/modal.tsx'), /profile\.dataSaver/);
+  assert.match(read('app/(tabs)/live.tsx'), /PREVIEW OFF/);
+});
+
+test('source files do not contain common mojibake byte-range artifacts', () => {
+  for (const file of sourceDirs.flatMap(sourceFiles)) {
+    assert.doesNotMatch(read(file), /[\u00c0-\u00ff]{2,}/, `${file} appears to contain mojibake`);
+  }
 });

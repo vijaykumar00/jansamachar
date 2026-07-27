@@ -12,24 +12,95 @@ import {
   TextInput,
   TextInputProps,
   TextProps,
-  useColorScheme,
   View,
   ViewProps,
   ViewStyle,
 } from 'react-native';
 import GorhomBottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import { SymbolView } from 'expo-symbols';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/colors';
 import { layout, radius, spacing, typography } from '@/constants/theme';
+import { useResolvedColorScheme } from '@/store/userProfileStore';
 
 type Tone = 'primary' | 'secondary' | 'muted' | 'inverse' | 'danger' | 'success' | 'info';
 type AppTextVariant = keyof typeof typography;
 type BadgeTone = 'primary' | 'verified' | 'live' | 'topic' | 'ai' | 'fact' | 'muted' | 'warning' | 'local' | 'video' | 'saved';
+export type AppIconName =
+  | 'home'
+  | 'search'
+  | 'local'
+  | 'video'
+  | 'profile'
+  | 'close'
+  | 'refresh'
+  | 'save'
+  | 'share'
+  | 'check'
+  | 'info'
+  | 'image'
+  | 'play'
+  | 'chevronRight'
+  | 'lock'
+  | 'bell'
+  | 'textSize'
+  | 'document'
+  | 'history'
+  | 'offline';
+
+const ICON_SYMBOLS: Record<AppIconName, { ios: string; android: string; fallback: string }> = {
+  home: { ios: 'house.fill', android: 'home', fallback: '⌂' },
+  search: { ios: 'magnifyingglass', android: 'search', fallback: '?' },
+  local: { ios: 'mappin.and.ellipse', android: 'location_on', fallback: '⌖' },
+  video: { ios: 'play.rectangle.fill', android: 'smart_display', fallback: '▶' },
+  profile: { ios: 'person.crop.circle.fill', android: 'account_circle', fallback: '●' },
+  close: { ios: 'xmark', android: 'close', fallback: '×' },
+  refresh: { ios: 'arrow.clockwise', android: 'refresh', fallback: '↻' },
+  save: { ios: 'bookmark', android: 'bookmark', fallback: '□' },
+  share: { ios: 'square.and.arrow.up', android: 'share', fallback: '↗' },
+  check: { ios: 'checkmark', android: 'check', fallback: '✓' },
+  info: { ios: 'info.circle', android: 'info', fallback: 'i' },
+  image: { ios: 'photo', android: 'image', fallback: '▧' },
+  play: { ios: 'play.fill', android: 'play_arrow', fallback: '▶' },
+  chevronRight: { ios: 'chevron.right', android: 'chevron_right', fallback: '›' },
+  lock: { ios: 'lock', android: 'lock', fallback: '•' },
+  bell: { ios: 'bell', android: 'notifications', fallback: '!' },
+  textSize: { ios: 'textformat.size', android: 'format_size', fallback: 'A' },
+  document: { ios: 'doc.text', android: 'description', fallback: '□' },
+  history: { ios: 'clock.arrow.circlepath', android: 'history', fallback: '↺' },
+  offline: { ios: 'wifi.slash', android: 'cloud_off', fallback: '!' },
+};
 
 export function useThemeColors() {
-  const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const scheme = useResolvedColorScheme();
   return Colors[scheme];
+}
+
+export function AppIcon({
+  name,
+  color,
+  size = 20,
+  style,
+}: {
+  name: AppIconName;
+  color?: string;
+  size?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const C = useThemeColors();
+  const symbol = ICON_SYMBOLS[name];
+  const tintColor = color || C.icon;
+
+  return (
+    <SymbolView
+      name={{ ios: symbol.ios as any, android: symbol.android as any, web: symbol.android as any }}
+      size={size}
+      tintColor={tintColor}
+      fallback={<Text style={[styles.symbolFallback, { color: tintColor, fontSize: size }]}>{symbol.fallback}</Text>}
+      style={[{ width: size, height: size }, style]}
+    />
+  );
 }
 
 export function AppText({
@@ -113,7 +184,7 @@ export function AppButton({
   ...props
 }: PressableProps & {
   label: string;
-  icon?: string;
+  icon?: AppIconName;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   size?: 'sm' | 'md';
   textStyle?: TextProps['style'];
@@ -139,7 +210,7 @@ export function AppButton({
       ]}
       {...props}
     >
-      {icon ? <Text style={[styles.buttonIcon, { color: labelColor }]}>{icon}</Text> : null}
+      {icon ? <AppIcon name={icon} color={labelColor} size={16} /> : null}
       <Text style={[typography.button, { color: labelColor }, textStyle]} numberOfLines={1} adjustsFontSizeToFit>
         {label}
       </Text>
@@ -147,7 +218,7 @@ export function AppButton({
   );
 }
 
-export function IconButton({ label, icon, style, ...props }: PressableProps & { label: string; icon: string }) {
+export function IconButton({ label, icon, style, ...props }: PressableProps & { label: string; icon: AppIconName }) {
   const C = useThemeColors();
   return (
     <Pressable
@@ -161,7 +232,7 @@ export function IconButton({ label, icon, style, ...props }: PressableProps & { 
       ]}
       {...props}
     >
-      <Text style={[styles.iconText, { color: C.icon }]}>{icon}</Text>
+      <AppIcon name={icon} color={C.icon} size={20} />
     </Pressable>
   );
 }
@@ -192,10 +263,11 @@ export function Badge({
     saved: C.saved,
   }[tone];
   const displayLabel = label || (tone === 'verified' ? 'Verified' : tone === 'live' ? 'LIVE' : '');
-  const displayIcon = icon || (tone === 'verified' ? '✓' : undefined);
+  const displayIcon = icon;
   return (
     <View style={[styles.badge, { backgroundColor: color + '1F', borderColor: color + '55' }, style]}>
       {tone === 'live' ? <LivePulseDot color={color} /> : null}
+      {!displayIcon && tone === 'verified' ? <AppIcon name="check" color={color} size={12} /> : null}
       {displayIcon ? <Text style={[styles.badgeIcon, { color }]}>{displayIcon}</Text> : null}
       {displayLabel ? <Text style={[typography.badge, { color }]}>{displayLabel}</Text> : null}
     </View>
@@ -304,7 +376,7 @@ export function SearchField({
   const C = useThemeColors();
   return (
     <View style={[styles.searchField, { backgroundColor: C.surface, borderColor: C.border }, containerStyle]}>
-      <Text style={[styles.searchIcon, { color: C.textMuted }]}>Q</Text>
+      <AppIcon name="search" color={C.textMuted} size={20} />
       <TextInput
         placeholderTextColor={C.textMuted}
         style={[styles.searchInput, { color: C.text }, inputStyle]}
@@ -324,7 +396,7 @@ export function EmptyState({ title, message, actionLabel, onAction }: {
   return (
     <View style={styles.emptyState}>
       <View style={styles.emptyMark}>
-        <Text style={styles.emptyMarkText}>i</Text>
+        <AppIcon name="info" color={Colors.light.coral} size={25} />
       </View>
       <AppText variant="sectionTitle" style={{ textAlign: 'center' }}>{title}</AppText>
       <AppText variant="body" tone="secondary" style={{ textAlign: 'center' }}>{message}</AppText>
@@ -420,7 +492,7 @@ export function BottomSheet({
             {title ? (
               <View style={styles.sheetHeader}>
                 <AppText variant="sectionTitle">{title}</AppText>
-                <IconButton label="Close" icon="X" onPress={onClose} />
+                <IconButton label="Close" icon="close" onPress={onClose} />
               </View>
             ) : null}
             {children}
@@ -464,7 +536,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  buttonIcon: { fontSize: 16, fontWeight: '900' },
+  symbolFallback: { fontWeight: '900', lineHeight: 22, textAlign: 'center' },
   iconButton: {
     width: layout.minTouch,
     height: layout.minTouch,
@@ -473,7 +545,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconText: { fontSize: 20, fontWeight: '800' },
   badge: {
     minHeight: 28,
     borderRadius: radius.sm,
@@ -520,7 +591,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  searchIcon: { fontSize: 20, fontWeight: '800' },
   searchInput: { flex: 1, fontSize: 15, paddingVertical: spacing.sm },
   emptyState: {
     alignItems: 'center',
@@ -537,7 +607,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.light.coral + '20',
   },
-  emptyMarkText: { color: Colors.light.coral, fontSize: 25, fontWeight: '900', fontStyle: 'italic' },
   loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
   skeletonStack: { alignSelf: 'stretch', gap: spacing.md, marginTop: spacing.lg },
   skeleton: {},

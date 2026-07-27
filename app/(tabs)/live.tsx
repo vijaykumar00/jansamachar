@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
@@ -7,7 +7,8 @@ import { radius, spacing } from '@/constants/theme';
 import { MOCK_LIVE_STREAMS, MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { openExternalUrl } from '@/services/linkService';
 import { searchYouTubeNews, ytSearchToNewsItem } from '@/services/youtubeSearchService';
-import { AppText, Badge, EmptyState, IconButton, LoadingState, Screen, SectionHeader } from '@/components/ui/design-system';
+import { AppIcon, AppText, Badge, EmptyState, IconButton, LoadingState, Screen, SectionHeader } from '@/components/ui/design-system';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import type { NewsCardItem } from '@/components/AnimatedNewsCard';
 
 type LongFormItem = {
@@ -56,7 +57,7 @@ async function loadVideoTab() {
           url: item.url || 'https://youtube.com',
         }))
       : fallbackLongForm,
-    fallbackLabel: usingFallback ? `Showing saved stories from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
+    fallbackLabel: usingFallback ? `Showing offline fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
   };
 }
 
@@ -68,7 +69,8 @@ function formatViewers(n?: number): string {
 }
 
 function LongFormCard({ item }: { item: LongFormItem }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const dataSaver = useProfileStore((state) => state.profile.dataSaver);
   return (
     <Pressable
       accessibilityRole="link"
@@ -78,11 +80,12 @@ function LongFormCard({ item }: { item: LongFormItem }) {
         { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.88 : 1 },
       ]}
     >
-      {item.thumbnailUrl ? (
+      {item.thumbnailUrl && !dataSaver ? (
         <Image source={{ uri: item.thumbnailUrl }} style={styles.longThumb} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
         <View style={[styles.longThumb, styles.fallbackThumb, { backgroundColor: C.surfaceElevated }]}>
-          <AppText variant="badge" tone="muted">VIDEO</AppText>
+          <AppIcon name={dataSaver ? 'offline' : 'video'} color={C.textMuted} size={24} />
+          <AppText variant="badge" tone="muted">{dataSaver ? 'PREVIEW OFF' : 'VIDEO'}</AppText>
         </View>
       )}
       <View style={styles.longBody}>
@@ -98,7 +101,8 @@ function LongFormCard({ item }: { item: LongFormItem }) {
 }
 
 function ClipPage({ item, height }: { item: NewsCardItem; height: number }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const dataSaver = useProfileStore((state) => state.profile.dataSaver);
   return (
     <Pressable
       accessibilityRole="link"
@@ -106,16 +110,16 @@ function ClipPage({ item, height }: { item: NewsCardItem; height: number }) {
       style={[styles.clipPage, { height, backgroundColor: C.background }]}
     >
       <View style={[styles.clipFrame, { backgroundColor: C.secondary }]}>
-        {item.thumbnailUrl ? (
+        {item.thumbnailUrl && !dataSaver ? (
           <Image source={{ uri: item.thumbnailUrl }} style={styles.clipImage} contentFit="cover" cachePolicy="memory-disk" />
         ) : null}
         <View style={[styles.clipOverlay, { backgroundColor: C.overlay }]}>
           <View style={styles.clipTop}>
             <Badge label={item.duration || 'SHORT'} tone="video" />
-            <IconButton label="Share clip" icon=">" />
+            <IconButton label="Share clip" icon="share" />
           </View>
           <View style={styles.playCircle}>
-            <AppText variant="screenTitle" tone="inverse">PLAY</AppText>
+            <AppIcon name="play" color={C.textInverse} size={40} />
           </View>
           <View style={styles.clipBottom}>
             <AppText variant="headline" tone="inverse" numberOfLines={2}>{item.title}</AppText>
@@ -128,7 +132,7 @@ function ClipPage({ item, height }: { item: NewsCardItem; height: number }) {
 }
 
 export default function VideoScreen() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { height } = useWindowDimensions();
   const pageHeight = Math.max(520, height - 210);

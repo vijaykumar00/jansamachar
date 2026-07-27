@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StatusBar, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
@@ -8,7 +8,7 @@ import { fetchDistrictNews, fetchStateNews, toNewsItem } from '@/services/newsDa
 import { MOCK_DOCUMENTS, MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { getCitizenNewsItems } from '@/services/supabaseService';
 import { openExternalUrl } from '@/services/linkService';
-import { useProfileStore } from '@/store/userProfileStore';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import AnimatedNewsCard, { type NewsCardItem } from '@/components/AnimatedNewsCard';
 import {
   AppButton,
@@ -72,12 +72,12 @@ async function loadLocalStories(profile: ReturnType<typeof useProfileStore.getSt
   const combined = [...publisherItems, ...citizenItems];
   return {
     items: combined.length > 0 ? combined.slice(0, 14) : fallback.slice(0, 8),
-    fallbackLabel: combined.length === 0 ? `Showing saved stories from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
+    fallbackLabel: combined.length === 0 ? `Showing offline fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
   };
 }
 
 function DocumentCard({ doc }: { doc: Document }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
     <Pressable
       accessibilityRole="link"
@@ -99,7 +99,7 @@ function DocumentCard({ doc }: { doc: Document }) {
 }
 
 export default function LocalScreen() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { profile, setProfile } = useProfileStore();
   const locationReady = hasLocation(profile);

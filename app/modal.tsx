@@ -7,19 +7,18 @@ import {
   StyleSheet,
   Text,
   View,
-  useColorScheme,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { radius, spacing, typography } from '@/constants/theme';
-import { AppButton, AppText, Badge, BottomSheet, IconButton, Screen } from '@/components/ui/design-system';
+import { AppButton, AppIcon, AppText, Badge, BottomSheet, IconButton, Screen } from '@/components/ui/design-system';
 import { factCheck, summarizeNews } from '@/services/geminiService';
 import { openExternalUrl } from '@/services/linkService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { fetchNewsItemById, type NewsItem } from '@/services/newsService';
-import { useProfileStore } from '@/store/userProfileStore';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 
 type SheetMode = 'save' | 'share' | 'fact' | null;
 
@@ -56,7 +55,7 @@ function routeFallbackArticle(params: ReturnType<typeof useLocalSearchParams>): 
 }
 
 export default function ModalScreen() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const params = useLocalSearchParams();
   const articleId = asString(params.id);
@@ -78,7 +77,7 @@ export default function ModalScreen() {
   const fallbackArticle = useMemo(() => routeFallbackArticle(params), [params]);
   const article = articleQuery.data || fallbackArticle;
   const fallbackLabel = articleQuery.isFetched && !articleQuery.data && articleId
-    ? `Showing saved stories from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
+    ? `Showing route fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
     : '';
   const bodyText = useMemo(() => {
     const cleanDescription = article.description?.replace(/<[^>]*>/g, '').trim();
@@ -125,21 +124,22 @@ export default function ModalScreen() {
     <Screen>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
       <View style={[styles.topBar, { backgroundColor: C.background, borderBottomColor: C.divider }]}>
-        <IconButton label="Close article" icon="X" onPress={() => router.back()} />
+        <IconButton label="Close article" icon="close" onPress={() => router.back()} />
         <View style={{ flex: 1 }}>
           <AppText variant="caption" tone="muted" numberOfLines={1}>{article.channelName}</AppText>
           <AppText variant="label" numberOfLines={1}>Article reader</AppText>
         </View>
-        <IconButton label="Save story" icon="S" onPress={() => setSheetMode('save')} />
-        <IconButton label="Share story" icon=">" onPress={() => setSheetMode('share')} />
+        <IconButton label="Save story" icon="save" onPress={() => setSheetMode('save')} />
+        <IconButton label="Share story" icon="share" onPress={() => setSheetMode('share')} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {article.thumbnailUrl ? (
+        {article.thumbnailUrl && !profile.dataSaver ? (
           <Image source={{ uri: article.thumbnailUrl }} style={styles.heroImage} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <View style={[styles.heroImage, styles.imageFallback, { backgroundColor: C.surfaceElevated }]}>
-            <AppText variant="badge" tone="muted">NO IMAGE</AppText>
+            <AppIcon name={profile.dataSaver ? 'offline' : 'image'} color={C.textMuted} size={26} />
+            <AppText variant="badge" tone="muted">{profile.dataSaver ? 'PREVIEW OFF' : 'NO IMAGE'}</AppText>
           </View>
         )}
 
@@ -252,7 +252,7 @@ export default function ModalScreen() {
         {sheetMode === 'save' ? (
           <View style={styles.sheetStack}>
             <Badge label="Saved" tone="saved" />
-            <AppText variant="body" tone="secondary">This story is marked for your saved list. Backend bookmark persistence can wire into this action.</AppText>
+            <AppText variant="body" tone="secondary">This story is marked for this session. Account sync is still pending.</AppText>
             <AppButton label="Done" onPress={() => setSheetMode(null)} />
           </View>
         ) : null}

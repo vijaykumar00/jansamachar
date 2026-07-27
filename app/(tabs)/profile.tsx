@@ -1,13 +1,14 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Switch, View, useColorScheme } from 'react-native';
+import { Alert, ScrollView, StatusBar, StyleSheet, Switch, View } from 'react-native';
 import Constants from 'expo-constants';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS } from '@/constants/professions';
 import { radius, spacing } from '@/constants/theme';
-import { useProfileStore } from '@/store/userProfileStore';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { openExternalUrl } from '@/services/linkService';
 import {
   AppButton,
+  AppIcon,
   AppText,
   Badge,
   Chip,
@@ -27,7 +28,7 @@ function SettingRow({
   value: boolean;
   onValueChange: (value: boolean) => void;
 }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
     <View style={styles.settingRow}>
       <View style={{ flex: 1 }}>
@@ -45,8 +46,34 @@ function SettingRow({
   );
 }
 
+function StatusPanel({
+  icon,
+  title,
+  message,
+  badge,
+}: {
+  icon: 'lock' | 'save' | 'history' | 'info';
+  title: string;
+  message: string;
+  badge?: string;
+}) {
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  return (
+    <View style={[styles.statusPanel, { backgroundColor: C.card, borderColor: C.border }]}>
+      <View style={[styles.statusIcon, { backgroundColor: C.surfaceElevated }]}>
+        <AppIcon name={icon} color={C.coral} size={22} />
+      </View>
+      <View style={styles.rowText}>
+        <AppText variant="bodyStrong">{title}</AppText>
+        <AppText variant="caption" tone="muted">{message}</AppText>
+      </View>
+      {badge ? <Badge label={badge} tone="topic" /> : null}
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { profile, resetProfile, setProfile } = useProfileStore();
   const profession = PROFESSIONS.find((item) => item.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
@@ -84,40 +111,31 @@ export default function ProfileScreen() {
         <SectionHeader title="Sign In" eyebrow="Optional" />
         <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
           <AppText variant="body" tone="secondary">
-            Basic browsing never requires an account. Sign in later to sync bookmarks and history.
+            Basic browsing works without an account. Sync will be enabled after Supabase auth screens are connected.
           </AppText>
           <AppButton
-            label="Sign in or create account"
+            label="Sign-in setup pending"
             variant="secondary"
-            onPress={() => Alert.alert('Optional sign-in', 'Auth is optional and can connect to Supabase when enabled.')}
+            icon="lock"
+            onPress={() => Alert.alert('Sign-in pending', 'Supabase auth helpers exist, but the sign-in screen is not connected yet.')}
           />
         </View>
 
         <SectionHeader title="Bookmarks" eyebrow="Saved reading" />
-        <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
-          {['Electoral bond explainer', 'RTI citizen guide', 'Delhi AQI updates'].map((item) => (
-            <Pressable key={item} accessibilityRole="button" style={styles.listRow}>
-              <View style={styles.rowText}>
-                <AppText variant="bodyStrong">{item}</AppText>
-                <AppText variant="caption" tone="muted">Saved on this device</AppText>
-              </View>
-              <Badge label="Saved" tone="saved" />
-            </Pressable>
-          ))}
-        </View>
+        <StatusPanel
+          icon="save"
+          title="No synced bookmarks yet"
+          message="Story save actions are marked for this session until account sync is connected."
+          badge="Pending"
+        />
 
         <SectionHeader title="Reading History" eyebrow="Recent stories" />
-        <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
-          {['Current affairs roundup', 'Ground report video', 'Local civic update'].map((item, index) => (
-            <View key={item} style={styles.listRow}>
-              <View style={styles.rowText}>
-                <AppText variant="bodyStrong">{item}</AppText>
-                <AppText variant="caption" tone="muted">{index + 1}h ago</AppText>
-              </View>
-              <Badge label="History" tone="topic" />
-            </View>
-          ))}
-        </View>
+        <StatusPanel
+          icon="history"
+          title="History is not tracked yet"
+          message="A local reading history can be added without changing the public browsing model."
+          badge="Empty"
+        />
 
         <SectionHeader title="Notifications" eyebrow="2-3 per day works best" />
         <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
@@ -130,14 +148,14 @@ export default function ProfileScreen() {
           <View style={[styles.divider, { backgroundColor: C.divider }]} />
           <SettingRow
             title="Data saver"
-            subtitle="Prefer lighter images and fewer previews."
+            subtitle="Turns off story and video preview images."
             value={profile.dataSaver}
             onValueChange={(value) => setProfile({ dataSaver: value })}
           />
           <View style={[styles.divider, { backgroundColor: C.divider }]} />
           <SettingRow
             title="Video autoplay"
-            subtitle="Sound never starts automatically."
+            subtitle="Prepared for embedded playback; current videos open on tap."
             value={profile.videoAutoplay}
             onValueChange={(value) => setProfile({ videoAutoplay: value })}
           />
@@ -196,8 +214,18 @@ export default function ProfileScreen() {
           </AppText>
           <AppText variant="caption" tone="muted">Version {appVersion}</AppText>
           <View style={styles.actionRow}>
-            <AppButton label="Privacy" variant="ghost" style={{ flex: 1 }} />
-            <AppButton label="Terms" variant="ghost" style={{ flex: 1 }} />
+            <AppButton
+              label="Privacy"
+              variant="ghost"
+              style={{ flex: 1 }}
+              onPress={() => Alert.alert('Privacy pending', 'A public privacy page is not configured yet.')}
+            />
+            <AppButton
+              label="Terms"
+              variant="ghost"
+              style={{ flex: 1 }}
+              onPress={() => Alert.alert('Terms pending', 'A public terms page is not configured yet.')}
+            />
           </View>
           <AppButton
             label="Reset onboarding"
@@ -223,7 +251,15 @@ const styles = StyleSheet.create({
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 56 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   divider: { height: 1 },
-  listRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  statusPanel: {
+    borderRadius: radius.card,
+    borderWidth: 1,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  statusIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   rowText: { flex: 1, gap: 2 },
   actionRow: { flexDirection: 'row', gap: spacing.sm },
 });

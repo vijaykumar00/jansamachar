@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, StatusBar, StyleSheet, View, useColorScheme } from 'react-native';
+import { FlatList, Pressable, StatusBar, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/colors';
 import { INTERESTS } from '@/constants/professions';
 import { TRUSTED_YOUTUBE_CHANNELS } from '@/constants/sources';
 import { radius, spacing } from '@/constants/theme';
-import { useProfileStore } from '@/store/userProfileStore';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { fetchNewsByQuery, toNewsItem } from '@/services/newsDataService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { openExternalUrl } from '@/services/linkService';
@@ -45,7 +45,7 @@ async function loadSearchResults(query: string) {
   return {
     articles: liveStories.length > 0 ? liveStories : fallback.filter((item) => item.source !== 'youtube'),
     videos: liveVideos.length > 0 ? liveVideos : fallback.filter((item) => item.source === 'youtube' || item.videoId),
-    fallbackLabel: usingFallback ? `Showing saved stories from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
+    fallbackLabel: usingFallback ? `Showing offline fallback from ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : '',
   };
 }
 
@@ -58,7 +58,7 @@ async function loadCurrentAffairs() {
 }
 
 export default function SearchScreen() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { profile } = useProfileStore();
   const [query, setQuery] = useState('');

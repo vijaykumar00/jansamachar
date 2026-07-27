@@ -1,7 +1,9 @@
 import { Tabs } from 'expo-router';
-import { Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
+import { AppIcon, type AppIconName } from '@/components/ui/design-system';
+import { useResolvedColorScheme } from '@/store/userProfileStore';
 
 function TabIcon({
   focused,
@@ -9,13 +11,13 @@ function TabIcon({
   label,
 }: {
   focused: boolean;
-  icon: string;
+  icon: AppIconName;
   label: string;
 }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
     <View style={[styles.tabItem, focused && { backgroundColor: C.primary + '18' }]}>
-      <Text style={[styles.tabIcon, { color: focused ? C.primary : C.tabIconDefault }]}>{icon}</Text>
+      <AppIcon name={icon} color={focused ? C.primary : C.tabIconDefault} size={20} />
       <Text style={[styles.tabLabel, { color: focused ? C.primary : C.tabIconDefault }]} numberOfLines={1}>
         {label}
       </Text>
@@ -24,7 +26,7 @@ function TabIcon({
 }
 
 export default function TabLayout() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
 
   return (
@@ -52,7 +54,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarAccessibilityLabel: 'Home tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="H" label="Home" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="home" label="Home" />,
         }}
       />
       <Tabs.Screen
@@ -60,7 +62,7 @@ export default function TabLayout() {
         options={{
           title: 'Explore',
           tabBarAccessibilityLabel: 'Explore tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="Q" label="Explore" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="search" label="Explore" />,
         }}
       />
       <Tabs.Screen
@@ -68,7 +70,7 @@ export default function TabLayout() {
         options={{
           title: 'Local',
           tabBarAccessibilityLabel: 'Local and civic documents tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="L" label="Local" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="local" label="Local" />,
         }}
       />
       <Tabs.Screen
@@ -76,7 +78,7 @@ export default function TabLayout() {
         options={{
           title: 'Video',
           tabBarAccessibilityLabel: 'Video news tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="V" label="Video" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="video" label="Video" />,
         }}
       />
       <Tabs.Screen
@@ -84,7 +86,7 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarAccessibilityLabel: 'Profile tab',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="P" label="Profile" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="profile" label="Profile" />,
         }}
       />
     </Tabs>
@@ -101,6 +103,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
     gap: 2,
   },
-  tabIcon: { fontSize: 20, fontWeight: '900', lineHeight: 22 },
   tabLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0 },
 });

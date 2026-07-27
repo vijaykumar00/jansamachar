@@ -6,14 +6,14 @@ import {
   Pressable,
   StyleSheet,
   View,
-  useColorScheme,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
-import { AppText, Badge, IconButton } from '@/components/ui/design-system';
+import { AppIcon, AppText, Badge, IconButton } from '@/components/ui/design-system';
 import { openExternalUrl } from '@/services/linkService';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 
 export type NewsCardVariant = 'article' | 'video' | 'local';
 
@@ -67,8 +67,9 @@ function timeAgo(dateStr: string): string {
 }
 
 function NewsCard({ item, index, variant }: Props) {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
+  const dataSaver = useProfileStore((state) => state.profile.dataSaver);
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(8)).current;
 
@@ -168,7 +169,7 @@ function NewsCard({ item, index, variant }: Props) {
         ]}
       >
         <View style={styles.mediaWrap}>
-          {item.thumbnailUrl ? (
+          {item.thumbnailUrl && !dataSaver ? (
             <Image
               source={{ uri: item.thumbnailUrl }}
               placeholder={IMAGE_BLURHASH}
@@ -180,7 +181,8 @@ function NewsCard({ item, index, variant }: Props) {
             />
           ) : (
             <View style={[styles.media, styles.noImage, { backgroundColor: C.surfaceElevated }]}>
-              <AppText variant="badge" tone="muted">NO IMAGE</AppText>
+              <AppIcon name={dataSaver ? 'offline' : 'image'} color={C.textMuted} size={24} />
+              <AppText variant="badge" tone="muted">{dataSaver ? 'PREVIEW OFF' : 'NO IMAGE'}</AppText>
             </View>
           )}
 
@@ -201,7 +203,7 @@ function NewsCard({ item, index, variant }: Props) {
           {isVideo ? (
             <>
               <View style={[styles.playOverlay, { backgroundColor: C.overlay }]}>
-                <View style={[styles.playTriangle, { borderLeftColor: C.textInverse }]} />
+                <AppIcon name="play" color={C.textInverse} size={24} />
               </View>
               <View style={[styles.durationBadge, { backgroundColor: C.overlay }]}>
                 <AppText variant="badge" tone="inverse">{item.duration || 'LIVE'}</AppText>
@@ -233,8 +235,8 @@ function NewsCard({ item, index, variant }: Props) {
             <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.footerTime}>
               {timeAgo(item.publishedAt)}
             </AppText>
-            <IconButton label="Save story" icon="S" onPress={handleSave} style={styles.footerIcon} />
-            <IconButton label="Share story" icon=">" onPress={handleShare} style={styles.footerIcon} />
+            <IconButton label="Save story" icon="save" onPress={handleSave} style={styles.footerIcon} />
+            <IconButton label="Share story" icon="share" onPress={handleShare} style={styles.footerIcon} />
           </View>
         </View>
       </Pressable>
@@ -289,16 +291,6 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  playTriangle: {
-    width: 0,
-    height: 0,
-    marginLeft: 4,
-    borderTopWidth: 11,
-    borderBottomWidth: 11,
-    borderLeftWidth: 17,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
   },
   durationBadge: {
     position: 'absolute',

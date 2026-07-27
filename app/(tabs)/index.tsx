@@ -5,7 +5,6 @@ import {
   StatusBar,
   StyleSheet,
   View,
-  useColorScheme,
   useWindowDimensions,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -13,7 +12,7 @@ import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS } from '@/constants/professions';
 import { radius, spacing } from '@/constants/theme';
-import { useProfileStore } from '@/store/userProfileStore';
+import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { buildPersonalizedFeed, getGreeting, type FeedSection } from '@/services/personalizationService';
 import { searchYouTubeNews } from '@/services/youtubeSearchService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
@@ -203,7 +202,7 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       ].filter((section) => section.items.length > 0) as FeedSection[]),
       fetchedAt: new Date().toISOString(),
       isFallback: !hasStories,
-      fallbackLabel: !hasStories ? `Showing saved stories from ${formatSavedTime(new Date().toISOString())}` : undefined,
+      fallbackLabel: !hasStories ? `Showing offline fallback from ${formatSavedTime(new Date().toISOString())}` : undefined,
     };
 
     if (hasStories) lastSuccessfulHomeFeed = result;
@@ -214,7 +213,7 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       return {
         ...saved,
         isFallback: true,
-        fallbackLabel: `Showing saved stories from ${formatSavedTime(saved.fetchedAt)}`,
+        fallbackLabel: `Showing last successful feed from ${formatSavedTime(saved.fetchedAt)}`,
       };
     }
 
@@ -223,26 +222,26 @@ async function loadHomeFeed(profile: ReturnType<typeof useProfileStore.getState>
       sections: normalizeSectionItems(toFallbackSections()),
       fetchedAt,
       isFallback: true,
-      fallbackLabel: `Showing saved stories from ${formatSavedTime(fetchedAt)}`,
+      fallbackLabel: `Showing offline fallback from ${formatSavedTime(fetchedAt)}`,
     };
   }
 }
 
 function BreakingBand({ item, onDismiss }: { item: NewsCardItem; onDismiss: () => void }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   return (
     <View style={[styles.breakingBand, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.coral }]}>
       <View style={styles.breakingText}>
         <AppText variant="badge" tone="danger">BREAKING</AppText>
         <AppText variant="caption" tone="secondary" numberOfLines={1}>{item.title}</AppText>
       </View>
-      <IconButton label="Dismiss breaking news" icon="X" onPress={onDismiss} style={styles.dismissButton} />
+      <IconButton label="Dismiss breaking news" icon="close" onPress={onDismiss} style={styles.dismissButton} />
     </View>
   );
 }
 
 function RefreshIndicator({ visible }: { visible: boolean }) {
-  const C = useColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
   if (!visible) return null;
 
   return (
@@ -267,7 +266,7 @@ function HomeSkeletonList() {
 }
 
 export default function HomeScreen() {
-  const isDark = useColorScheme() === 'dark';
+  const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { width } = useWindowDimensions();
   const { profile, isLoaded } = useProfileStore();
@@ -322,8 +321,8 @@ export default function HomeScreen() {
             <View style={styles.headerTop}>
               <JanSamacharLogo compact />
               <View style={styles.headerActions}>
-                <IconButton label="Search news" icon="Q" onPress={() => router.push('/search')} />
-                <IconButton label="Refresh feed" icon="!" onPress={() => query.refetch()} />
+                <IconButton label="Search news" icon="search" onPress={() => router.push('/search')} />
+                <IconButton label="Refresh feed" icon="refresh" onPress={() => query.refetch()} />
               </View>
             </View>
 
