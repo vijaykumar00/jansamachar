@@ -13,6 +13,7 @@ import { Colors } from '@/constants/colors';
 import { radius, spacing } from '@/constants/theme';
 import { AppIcon, AppText, Badge, IconButton } from '@/components/ui/design-system';
 import { openExternalUrl } from '@/services/linkService';
+import { type EngagementStory, useEngagementStore } from '@/store/engagementStore';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 
 export type NewsCardVariant = 'article' | 'video' | 'local';
@@ -66,10 +67,30 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function toEngagementStory(item: NewsCardItem): EngagementStory {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description || '',
+    thumbnailUrl: item.thumbnailUrl || '',
+    channelName: item.channelName,
+    publishedAt: item.publishedAt,
+    url: item.url || (item.videoId ? `https://www.youtube.com/watch?v=${item.videoId}` : ''),
+    videoId: item.videoId || '',
+    source: item.source,
+    trustLevel: item.trustLevel,
+    category: item.category || '',
+    aiSummary: item.aiSummary || '',
+  };
+}
+
 function NewsCard({ item, index, variant }: Props) {
   const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const dataSaver = useProfileStore((state) => state.profile.dataSaver);
+  const addHistory = useEngagementStore((state) => state.addHistory);
+  const toggleSavedStory = useEngagementStore((state) => state.toggleSavedStory);
+  const isSaved = useEngagementStore((state) => state.savedItems.some((savedItem) => savedItem.id === item.id));
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(8)).current;
 
@@ -118,6 +139,8 @@ function NewsCard({ item, index, variant }: Props) {
   const summarySnippet = item.aiSummary?.replace(/\s+/g, ' ').replace(/^[-•]\s*/, '').trim() || '';
 
   const openStory = () => {
+    addHistory(toEngagementStory(item));
+
     if (item.videoId) {
       openExternalUrl(`https://www.youtube.com/watch?v=${item.videoId}`);
       return;
@@ -141,7 +164,8 @@ function NewsCard({ item, index, variant }: Props) {
   };
 
   const handleSave = () => {
-    Alert.alert('Saved', 'Story added to saved items.');
+    const nowSaved = toggleSavedStory(toEngagementStory(item));
+    Alert.alert(nowSaved ? 'Saved' : 'Removed', nowSaved ? 'Story added to your saved list.' : 'Story removed from your saved list.');
   };
 
   const handleShare = () => {
@@ -235,7 +259,7 @@ function NewsCard({ item, index, variant }: Props) {
             <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.footerTime}>
               {timeAgo(item.publishedAt)}
             </AppText>
-            <IconButton label="Save story" icon="save" onPress={handleSave} style={styles.footerIcon} />
+            <IconButton label={isSaved ? 'Remove saved story' : 'Save story'} icon="save" onPress={handleSave} style={styles.footerIcon} />
             <IconButton label="Share story" icon="share" onPress={handleShare} style={styles.footerIcon} />
           </View>
         </View>

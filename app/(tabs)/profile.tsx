@@ -1,9 +1,11 @@
 import React from 'react';
-import { Alert, ScrollView, StatusBar, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Switch, View } from 'react-native';
 import Constants from 'expo-constants';
+import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS } from '@/constants/professions';
 import { radius, spacing } from '@/constants/theme';
+import { type EngagementStory, useEngagementStore } from '@/store/engagementStore';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { openExternalUrl } from '@/services/linkService';
 import {
@@ -12,10 +14,46 @@ import {
   AppText,
   Badge,
   Chip,
+  IconButton,
   JanSamacharLogo,
   Screen,
   SectionHeader,
 } from '@/components/ui/design-system';
+
+function formatRelative(dateStr?: string): string {
+  if (!dateStr) return 'recently';
+  const then = new Date(dateStr).getTime();
+  if (!Number.isFinite(then)) return 'recently';
+  const mins = Math.max(0, Math.floor((Date.now() - then) / 60000));
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function openStoredStory(story: EngagementStory) {
+  if (story.videoId) {
+    openExternalUrl(story.url || `https://www.youtube.com/watch?v=${story.videoId}`);
+    return;
+  }
+
+  router.push({
+    pathname: '/modal',
+    params: {
+      id: story.id,
+      title: story.title,
+      description: story.description || '',
+      source: story.channelName,
+      publishedAt: story.publishedAt,
+      url: story.url || '',
+      thumbnailUrl: story.thumbnailUrl || '',
+      trustLevel: story.trustLevel,
+      category: story.category || '',
+      aiSummary: story.aiSummary || '',
+    },
+  });
+}
 
 function SettingRow({
   title,
@@ -72,10 +110,52 @@ function StatusPanel({
   );
 }
 
+function StoryRow({
+  story,
+  meta,
+  onRemove,
+}: {
+  story: EngagementStory;
+  meta: string;
+  onRemove?: () => void;
+}) {
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${story.title}`}
+      onPress={() => openStoredStory(story)}
+      style={({ pressed }) => [styles.storyRow, { opacity: pressed ? 0.82 : 1 }]}
+    >
+      <View style={[styles.storyIcon, { backgroundColor: C.surfaceElevated }]}>
+        <AppIcon name={story.videoId ? 'video' : 'document'} color={C.coral} size={20} />
+      </View>
+      <View style={styles.rowText}>
+        <AppText variant="bodyStrong" numberOfLines={2}>{story.title}</AppText>
+        <AppText variant="caption" tone="muted" numberOfLines={1}>{story.channelName} - {meta}</AppText>
+      </View>
+      {onRemove ? (
+        <IconButton
+          label="Remove saved story"
+          icon="close"
+          onPress={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+        />
+      ) : null}
+    </Pressable>
+  );
+}
+
 export default function ProfileScreen() {
   const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { profile, resetProfile, setProfile } = useProfileStore();
+  const savedItems = useEngagementStore((state) => state.savedItems);
+  const historyItems = useEngagementStore((state) => state.historyItems);
+  const removeSavedStory = useEngagementStore((state) => state.removeSavedStory);
+  const clearHistory = useEngagementStore((state) => state.clearHistory);
   const profession = PROFESSIONS.find((item) => item.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
   const appVersion = Constants.expoConfig?.version || '1.0.0';
 
@@ -121,21 +201,47 @@ export default function ProfileScreen() {
           />
         </View>
 
-        <SectionHeader title="Bookmarks" eyebrow="Saved reading" />
-        <StatusPanel
-          icon="save"
-          title="No synced bookmarks yet"
-          message="Story save actions are marked for this session until account sync is connected."
-          badge="Pending"
-        />
+        <SectionHeader title="Bookmarks" eyebrow={savedItems.length ? `${savedItems.length} saved on this device` : 'Saved reading'} />
+        {savedItems.length > 0 ? (
+          <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
+            {savedItems.slice(0, 5).map((story) => (
+              <StoryRow
+                key={story.id}
+                story={story}
+                meta={`saved ${formatRelative(story.savedAt)}`}
+                onRemove={() => removeSavedStory(story.id)}
+              />
+            ))}
+          </View>
+        ) : (
+          <StatusPanel
+            icon="save"
+            title="No saved stories yet"
+            message="Tap the bookmark button on any story to keep it here on this device."
+            badge="Empty"
+          />
+        )}
 
-        <SectionHeader title="Reading History" eyebrow="Recent stories" />
-        <StatusPanel
-          icon="history"
-          title="History is not tracked yet"
-          message="A local reading history can be added without changing the public browsing model."
-          badge="Empty"
+        <SectionHeader
+          title="Reading History"
+          eyebrow={historyItems.length ? `${historyItems.length} recent items` : 'Recent stories'}
+          actionLabel={historyItems.length ? 'Clear' : undefined}
+          onAction={historyItems.length ? clearHistory : undefined}
         />
+        {historyItems.length > 0 ? (
+          <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
+            {historyItems.slice(0, 6).map((story) => (
+              <StoryRow key={story.id} story={story} meta={`viewed ${formatRelative(story.viewedAt)}`} />
+            ))}
+          </View>
+        ) : (
+          <StatusPanel
+            icon="history"
+            title="No reading history yet"
+            message="Stories you open will appear here so you can return without searching again."
+            badge="Empty"
+          />
+        )}
 
         <SectionHeader title="Notifications" eyebrow="2-3 per day works best" />
         <View style={[styles.panel, { backgroundColor: C.card, borderColor: C.border }]}>
@@ -260,6 +366,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   statusIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  storyRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  storyIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   rowText: { flex: 1, gap: 2 },
   actionRow: { flexDirection: 'row', gap: spacing.sm },
 });

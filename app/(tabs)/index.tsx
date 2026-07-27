@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   FlatList,
+  Pressable,
   RefreshControl,
   StatusBar,
   StyleSheet,
@@ -12,12 +13,14 @@ import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { INTERESTS, PROFESSIONS } from '@/constants/professions';
 import { radius, spacing } from '@/constants/theme';
+import { type EngagementStory, useEngagementStore } from '@/store/engagementStore';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 import { buildPersonalizedFeed, getGreeting, type FeedSection } from '@/services/personalizationService';
 import { searchYouTubeNews } from '@/services/youtubeSearchService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import AnimatedNewsCard, { type NewsCardItem, type NewsCardVariant } from '@/components/AnimatedNewsCard';
 import {
+  AppIcon,
   AppText,
   Chip,
   EmptyState,
@@ -27,6 +30,7 @@ import {
   SectionHeader,
   SkeletonBlock,
 } from '@/components/ui/design-system';
+import { openExternalUrl } from '@/services/linkService';
 
 type FeedEntry = { type: 'story'; id: string; item: NewsCardItem; variant: NewsCardVariant };
 type HomeFeedResult = {
@@ -64,6 +68,41 @@ function formatSavedTime(dateStr: string): string {
   const date = new Date(dateStr);
   if (Number.isNaN(date.getTime())) return 'earlier';
   return date.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatRelative(dateStr?: string): string {
+  if (!dateStr) return 'recently';
+  const then = new Date(dateStr).getTime();
+  if (!Number.isFinite(then)) return 'recently';
+  const mins = Math.max(0, Math.floor((Date.now() - then) / 60000));
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function openStoredStory(story: EngagementStory) {
+  if (story.videoId) {
+    openExternalUrl(story.url || `https://www.youtube.com/watch?v=${story.videoId}`);
+    return;
+  }
+
+  router.push({
+    pathname: '/modal',
+    params: {
+      id: story.id,
+      title: story.title,
+      description: story.description || '',
+      source: story.channelName,
+      publishedAt: story.publishedAt,
+      url: story.url || '',
+      thumbnailUrl: story.thumbnailUrl || '',
+      trustLevel: story.trustLevel,
+      category: story.category || '',
+      aiSummary: story.aiSummary || '',
+    },
+  });
 }
 
 function getStableStoryId(item: NewsCardItem, sectionId: string, index: number): string {
@@ -265,11 +304,54 @@ function HomeSkeletonList() {
   );
 }
 
+function ReturnUserStrip({ items, mode }: { items: EngagementStory[]; mode: 'history' | 'saved' }) {
+  const C = useResolvedColorScheme() === 'dark' ? Colors.dark : Colors.light;
+  if (items.length === 0) return null;
+
+  return (
+    <>
+      <SectionHeader
+        title={mode === 'history' ? 'Continue Reading' : 'Saved For Later'}
+        eyebrow={mode === 'history' ? 'Pick up recent stories' : 'Your bookmarks on this device'}
+      />
+      <FlatList
+        horizontal
+        data={items}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${item.title}`}
+            onPress={() => openStoredStory(item)}
+            style={({ pressed }) => [
+              styles.returnCard,
+              { backgroundColor: C.card, borderColor: C.border, opacity: pressed ? 0.84 : 1 },
+            ]}
+          >
+            <View style={[styles.returnIcon, { backgroundColor: C.surfaceElevated }]}>
+              <AppIcon name={item.videoId ? 'video' : mode === 'saved' ? 'save' : 'history'} color={C.coral} size={20} />
+            </View>
+            <AppText variant="bodyStrong" numberOfLines={2}>{item.title}</AppText>
+            <AppText variant="caption" tone="muted" numberOfLines={1}>
+              {item.channelName} - {mode === 'history' ? formatRelative(item.viewedAt) : formatRelative(item.savedAt)}
+            </AppText>
+          </Pressable>
+        )}
+        showsHorizontalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ width: spacing.md }} />}
+        contentContainerStyle={styles.returnList}
+      />
+    </>
+  );
+}
+
 export default function HomeScreen() {
   const isDark = useResolvedColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const { width } = useWindowDimensions();
   const { profile, isLoaded } = useProfileStore();
+  const historyItems = useEngagementStore((state) => state.historyItems);
+  const savedItems = useEngagementStore((state) => state.savedItems);
   const [filter, setFilter] = useState('all');
   const [breakingDismissed, setBreakingDismissed] = useState(false);
   const profession = PROFESSIONS.find((item) => item.id === profile.profession) || PROFESSIONS[PROFESSIONS.length - 1];
@@ -300,6 +382,8 @@ export default function HomeScreen() {
     () => buildMixedEntries(flatItems.filter((item) => !isBreakingStory(item)), hasLocation),
     [flatItems, hasLocation]
   );
+  const returnItems = historyItems.length > 0 ? historyItems.slice(0, 5) : savedItems.slice(0, 5);
+  const returnMode = historyItems.length > 0 ? 'history' : 'saved';
 
   return (
     <Screen>
@@ -355,6 +439,8 @@ export default function HomeScreen() {
                 ))}
               </View>
             </View>
+
+            <ReturnUserStrip items={returnItems} mode={returnMode} />
 
             <View style={styles.filterRow}>
               <FlatList
@@ -465,6 +551,16 @@ const styles = StyleSheet.create({
   },
   profilePills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   profilePill: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  returnList: { paddingRight: spacing.lg },
+  returnCard: {
+    width: 230,
+    minHeight: 126,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  returnIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   filterRow: { marginTop: spacing.lg },
   topStoriesContent: { paddingRight: spacing.lg },
   skeletonList: { paddingHorizontal: spacing.lg, gap: spacing.md },

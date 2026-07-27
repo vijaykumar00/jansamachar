@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
+import { useEngagementStore } from '@/store/engagementStore';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -14,10 +15,12 @@ const queryClient = new QueryClient({
 
 function NavigationController() {
   const { profile, isLoaded, loadProfile } = useProfileStore();
+  const loadEngagement = useEngagementStore((state) => state.loadEngagement);
 
   useEffect(() => {
     loadProfile();
-  }, []);
+    loadEngagement();
+  }, [loadEngagement, loadProfile]);
 
   useEffect(() => {
     if (!isLoaded) return;

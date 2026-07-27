@@ -97,8 +97,8 @@ test('fallback and profile placeholder copy is honest', () => {
   assert.doesNotMatch(appSource, /Showing saved stories/);
   assert.doesNotMatch(appSource, /Backend bookmark persistence/);
   assert.doesNotMatch(appSource, /Auth is optional and can connect/);
-  assert.match(read('app/(tabs)/profile.tsx'), /No synced bookmarks yet/);
-  assert.match(read('app/(tabs)/profile.tsx'), /History is not tracked yet/);
+  assert.match(read('app/(tabs)/profile.tsx'), /No saved stories yet/);
+  assert.match(read('app/(tabs)/profile.tsx'), /No reading history yet/);
 });
 
 test('theme and data saver preferences are wired into UI surfaces', () => {
@@ -113,4 +113,33 @@ test('source files do not contain common mojibake byte-range artifacts', () => {
   for (const file of sourceDirs.flatMap(sourceFiles)) {
     assert.doesNotMatch(read(file), /[\u00c0-\u00ff]{2,}/, `${file} appears to contain mojibake`);
   }
+});
+
+test('Phase 3 persists local saved articles and reading history', () => {
+  const store = read('store/engagementStore.ts');
+  assert.match(store, /jansamachar_engagement_v1/);
+  assert.match(store, /saveStory/);
+  assert.match(store, /toggleSavedStory/);
+  assert.match(store, /addHistory/);
+  assert.match(store, /MAX_SAVED_ITEMS = 80/);
+  assert.match(store, /MAX_HISTORY_ITEMS = 80/);
+});
+
+test('story open and save actions are wired into engagement store', () => {
+  assert.match(read('components/AnimatedNewsCard.tsx'), /toggleSavedStory/);
+  assert.match(read('components/AnimatedNewsCard.tsx'), /addHistory/);
+  assert.match(read('app/modal.tsx'), /toggleSavedStory/);
+  assert.match(read('app/modal.tsx'), /addHistory/);
+});
+
+test('Profile and Home expose local engagement value', () => {
+  const profile = read('app/(tabs)/profile.tsx');
+  const home = read('app/(tabs)/index.tsx');
+  assert.match(profile, /savedItems/);
+  assert.match(profile, /historyItems/);
+  assert.match(profile, /removeSavedStory/);
+  assert.match(profile, /clearHistory/);
+  assert.match(home, /Continue Reading/);
+  assert.match(home, /Saved For Later/);
+  assert.match(home, /ReturnUserStrip/);
 });

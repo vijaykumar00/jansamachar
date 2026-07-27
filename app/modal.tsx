@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -18,6 +18,7 @@ import { factCheck, summarizeNews } from '@/services/geminiService';
 import { openExternalUrl } from '@/services/linkService';
 import { MOCK_NEWS_ITEMS } from '@/services/mockData';
 import { fetchNewsItemById, type NewsItem } from '@/services/newsService';
+import { type EngagementStory, useEngagementStore } from '@/store/engagementStore';
 import { useProfileStore, useResolvedColorScheme } from '@/store/userProfileStore';
 
 type SheetMode = 'save' | 'share' | 'fact' | null;
@@ -35,6 +36,23 @@ function formatDate(date: string) {
 function estimateReadTime(text: string) {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
   return `${Math.max(1, Math.ceil(words / 220))} min read`;
+}
+
+function toEngagementStory(article: NewsItem): EngagementStory {
+  return {
+    id: article.id,
+    title: article.title,
+    description: article.description || '',
+    thumbnailUrl: article.thumbnailUrl || '',
+    channelName: article.channelName,
+    publishedAt: article.publishedAt,
+    url: article.url || '',
+    videoId: article.videoId || '',
+    source: article.source,
+    trustLevel: article.trustLevel,
+    category: article.category || '',
+    aiSummary: article.aiSummary || '',
+  };
 }
 
 function routeFallbackArticle(params: ReturnType<typeof useLocalSearchParams>): NewsItem {
@@ -60,12 +78,16 @@ export default function ModalScreen() {
   const params = useLocalSearchParams();
   const articleId = asString(params.id);
   const { profile, setProfile } = useProfileStore();
+  const addHistory = useEngagementStore((state) => state.addHistory);
+  const toggleSavedStory = useEngagementStore((state) => state.toggleSavedStory);
+  const isSaved = useEngagementStore((state) => state.savedItems.some((savedItem) => savedItem.id === articleId));
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [summary, setSummary] = useState('');
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [factResult, setFactResult] = useState<{ verdict: string; explanation: string } | null>(null);
   const [checkingFact, setCheckingFact] = useState(false);
   const [sheetMode, setSheetMode] = useState<SheetMode>(null);
+  const [saveFeedback, setSaveFeedback] = useState('Save this story for later on this device.');
 
   const articleQuery = useQuery({
     queryKey: ['article-detail', articleId],
@@ -87,6 +109,10 @@ export default function ModalScreen() {
   const isVerified = ['verified', 'official', 'breaking'].includes(article.trustLevel);
   const logoLetter = (article.channelName || 'J').trim().charAt(0).toUpperCase();
   const readerScale = Math.min(1.25, Math.max(0.9, profile.readerFontScale || 1));
+
+  useEffect(() => {
+    addHistory(toEngagementStory(article));
+  }, [addHistory, article.id]);
 
   const expandSummary = async () => {
     setSummaryExpanded((value) => !value);
@@ -120,6 +146,12 @@ export default function ModalScreen() {
     setProfile({ readerFontScale: Math.min(1.25, Math.max(0.9, Number(nextScale.toFixed(2)))) });
   };
 
+  const handleSave = () => {
+    const nowSaved = toggleSavedStory(toEngagementStory(article));
+    setSaveFeedback(nowSaved ? 'Saved to this device. Supabase sync can be added later.' : 'Removed from saved items on this device.');
+    setSheetMode('save');
+  };
+
   return (
     <Screen>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
@@ -129,7 +161,7 @@ export default function ModalScreen() {
           <AppText variant="caption" tone="muted" numberOfLines={1}>{article.channelName}</AppText>
           <AppText variant="label" numberOfLines={1}>Article reader</AppText>
         </View>
-        <IconButton label="Save story" icon="save" onPress={() => setSheetMode('save')} />
+        <IconButton label={isSaved ? 'Remove saved story' : 'Save story'} icon="save" onPress={handleSave} />
         <IconButton label="Share story" icon="share" onPress={() => setSheetMode('share')} />
       </View>
 
@@ -251,8 +283,8 @@ export default function ModalScreen() {
 
         {sheetMode === 'save' ? (
           <View style={styles.sheetStack}>
-            <Badge label="Saved" tone="saved" />
-            <AppText variant="body" tone="secondary">This story is marked for this session. Account sync is still pending.</AppText>
+            <Badge label={isSaved ? 'Saved' : 'Removed'} tone="saved" />
+            <AppText variant="body" tone="secondary">{saveFeedback}</AppText>
             <AppButton label="Done" onPress={() => setSheetMode(null)} />
           </View>
         ) : null}
